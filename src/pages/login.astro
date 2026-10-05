@@ -1,0 +1,117 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Acceso | SRT">
+  <main class="min-h-screen flex items-center justify-center bg-zinc-950 px-6">
+    <section class="w-full max-w-md">
+
+      <div class="rounded-2xl border border-zinc-800 bg-zinc-900/80 p-8 shadow-2xl">
+
+        <!-- Encabezado -->
+        <div class="mb-8 text-center">
+          <div
+            class="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-600/10 border border-emerald-500/20"
+          >
+            <span class="text-2xl font-bold text-emerald-400">
+              SRT
+            </span>
+          </div>
+
+          <h1 class="text-3xl font-bold tracking-tight text-white">
+            SRT
+          </h1>
+
+          <p class="mt-2 text-sm text-zinc-400">
+            Sistema de Operaciones
+          </p>
+        </div>
+
+        <!-- Información -->
+        <div class="mb-6 rounded-xl border border-zinc-800 bg-zinc-950/60 p-4">
+          <p class="text-sm leading-6 text-zinc-400">
+            Accedé al sistema utilizando tu cuenta de Google autorizada.
+          </p>
+        </div>
+
+        <!-- Login -->
+        <button
+          id="google-login"
+          type="button"
+          class="flex w-full items-center justify-center gap-3 rounded-xl bg-white px-5 py-3.5 font-medium text-zinc-900 transition hover:bg-zinc-200 active:scale-[0.98]"
+        >
+          <!-- Google Icon -->
+          <svg
+            class="h-5 w-5"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            <path
+              d="M21.805 10.041H12v3.918h5.64c-.243 1.26-.97 2.328-2.07 3.047v2.533h3.35c1.96-1.805 3.09-4.462 3.09-7.617 0-.66-.07-1.298-.205-1.881Z"
+              fill="#4285F4"
+            />
+            <path
+              d="M12 22c2.805 0 5.157-.93 6.876-2.52l-3.35-2.533c-.93.623-2.117.99-3.526.99-2.71 0-5.007-1.83-5.83-4.29H2.707v2.615A10.386 10.386 0 0 0 12 22Z"
+              fill="#34A853"
+            />
+            <path
+              d="M6.17 13.647A6.244 6.244 0 0 1 5.844 12c0-.572.11-1.127.326-1.647V7.738H2.707A10.001 10.001 0 0 0 2 12c0 1.61.386 3.13 1.068 4.262l3.102-2.615Z"
+              fill="#FBBC05"
+            />
+            <path
+              d="M12 6.063c1.527 0 2.896.525 3.974 1.555l2.98-2.98C17.152 2.938 14.8 2 12 2a10.386 10.386 0 0 0-9.293 5.738l3.102 2.615c.823-2.46 3.12-4.29 5.83-4.29Z"
+              fill="#EA4335"
+            />
+          </svg>
+
+          <span id="google-login-text">
+            Continuar con Google
+          </span>
+        </button>
+
+        <!-- Estado -->
+        <p
+          id="login-error"
+          class="mt-4 hidden text-center text-sm text-red-400"
+        ></p>
+
+        <p class="mt-6 text-center text-xs leading-5 text-zinc-500">
+          El acceso requiere una cuenta autorizada por el equipo SRT.
+        </p>
+
+      </div>
+
+      <p class="mt-6 text-center text-xs text-zinc-600">
+        SRT · Sistema de Operaciones
+      </p>
+
+    </section>
+  </main>
+
+  <script>
+    const button =
+      document.querySelector<HTMLButtonElement>('#google-login');
+  
+    const buttonText =
+      document.querySelector<HTMLSpanElement>('#google-login-text');
+  
+    const errorMessage =
+      document.querySelector<HTMLParagraphElement>('#login-error');
+  
+    button?.addEventListener('click', () => {
+      if (!button) return;
+  
+      button.disabled = true;
+  
+      if (buttonText) {
+        buttonText.textContent = 'Conectando...';
+      }
+  
+      errorMessage?.classList.add('hidden');
+  
+      window.location.href = '/api/auth/google';
+    });
+  </script>
+</Layout>

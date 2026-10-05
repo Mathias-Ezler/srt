@@ -1,0 +1,653 @@
+---
+import OperatorLayout from '../../layouts/OperatorLayout.astro';
+import { getCurrentMember } from '../../lib/auth';
+import { createApiClient } from '../../lib/supabase-api';
+
+const { member } = await getCurrentMember(Astro);
+
+if (!member) {
+  return Astro.redirect('/login');
+}
+
+const supabase = createApiClient(Astro.request, Astro.cookies);
+
+/* ============================================================
+   PERMISOS
+   ============================================================ */
+
+async function checkLeader(): Promise<boolean> {
+  if (!member.rank?.id) return false;
+
+  const { data: perm } = await supabase
+    .from('rank_permissions')
+    .select('permission_key')
+    .eq('rank_id', member.rank.id)
+    .eq('permission_key', 'admin.access')
+    .maybeSingle();
+
+  return !!perm;
+}
+
+const isLeader = await checkLeader();
+
+/* ============================================================
+   DESPLIEGUES
+   ============================================================ */
+
+const { data: deployments, error } = await supabase
+  .from('deployments')
+  .select(`
+    id,
+    code,
+    title,
+    type,
+    location,
+    risk_level,
+    status,
+    created_by,
+    started_at,
+    ended_at,
+    created_at,
+    deployment_members (
+      member_id,
+      role,
+      members (
+        id,
+        full_name,
+        callsign,
+        rank_id
+      )
+    )
+  `)
+  .order('created_at', { ascending: false });
+
+if (error) {
+  console.error('Error obteniendo despliegues:', error);
+}
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+
+const formatDate = (value: string | null) => {
+  if (!value) return '—';
+
+  return new Intl.DateTimeFormat('es-PY', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  })
+    .format(new Date(value))
+    .replace(/\./g, '')
+    .toUpperCase();
+};
+
+const formatTime = (value: string | null) => {
+  if (!value) return '—';
+
+  return new Intl.DateTimeFormat('es-PY', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(value));
+};
+
+const formatDuration = (
+  started: string | null,
+  ended: string | null,
+) => {
+  if (!started || !ended) return null;
+
+  const diff =
+    new Date(ended).getTime() -
+    new Date(started).getTime();
+
+  if (diff < 0) return null;
+
+  const minutes = Math.floor(diff / 60000);
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${remainingMinutes}m`;
+  }
+
+  return `${minutes} min`;
+};
+
+const statusLabel = (status: string) => {
+  switch (status) {
+    case 'draft':
+      return 'Borrador';
+
+    case 'active':
+      return 'Activo';
+
+    case 'completed':
+      return 'Finalizado';
+
+    case 'cancelled':
+      return 'Cancelado';
+
+    default:
+      return status;
+  }
+};
+
+const statusClass = (status: string) => {
+  switch (status) {
+    case 'active':
+      return 'border-gold-500/50 bg-gold-500/10 text-gold-500';
+
+    case 'completed':
+      return 'border-silver-300/30 bg-silver-300/5 text-silver-300';
+
+    case 'cancelled':
+      return 'border-danger-500/40 bg-danger-500/10 text-danger-500';
+
+    case 'draft':
+    default:
+      return 'border-base-600 bg-base-800 text-base-600';
+  }
+};
+
+const riskLabel = (risk: string | null) => {
+  if (!risk) return null;
+
+  switch (risk) {
+    case 'low':
+      return 'BAJO';
+
+    case 'medium':
+      return 'MEDIO';
+
+    case 'high':
+      return 'ALTO';
+
+    case 'critical':
+      return 'CRÍTICO';
+
+    default:
+      return risk.toUpperCase();
+  }
+};
+
+const riskClass = (risk: string | null) => {
+  switch (risk) {
+    case 'critical':
+      return 'text-danger-500';
+
+    case 'high':
+      return 'text-gold-500';
+
+    case 'medium':
+      return 'text-silver-300';
+
+    default:
+      return 'text-base-600';
+  }
+};
+---
+
+<OperatorLayout
+  title="Despliegues"
+  active="operaciones"
+  isLeader={isLeader}
+>
+  <div class="mx-auto max-w-6xl">
+
+    <!-- ======================================================
+         CABECERA
+    ======================================================= -->
+
+    <section class="mb-6">
+
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+
+        <div>
+          <p
+            class="font-mono text-[10px] uppercase tracking-[0.25em] text-gold-500"
+          >
+            Registro operacional
+          </p>
+
+          <h2
+            class="mt-1 font-display text-3xl font-bold uppercase tracking-wide"
+          >
+            Despliegues
+          </h2>
+
+          <p
+            class="mt-2 max-w-xl font-mono text-[10px] uppercase tracking-wider text-silver-300"
+          >
+            Historial de intervenciones y operaciones SRT
+          </p>
+        </div>
+
+        <a
+          href="/despliegues/nuevo"
+          class="group brackets inline-flex shrink-0 items-center justify-center border border-gold-500/60 bg-gold-500/10 px-5 py-3 font-mono text-[10px] uppercase tracking-[0.2em] text-gold-500 transition hover:bg-gold-500 hover:text-base-950"
+        >
+          <span class="mr-3 text-base">+</span>
+          Nuevo despliegue
+        </a>
+
+      </div>
+
+      <div class="mt-5 h-px bg-base-600/50"></div>
+
+    </section>
+
+
+    <!-- ======================================================
+         FILTROS
+    ======================================================= -->
+
+    <section
+      class="mb-5 border border-base-600/60 bg-base-900"
+    >
+
+      <div
+        class="flex flex-col gap-3 p-3 sm:flex-row"
+      >
+
+        <div class="relative flex-1">
+
+          <span
+            class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[10px] text-base-600"
+          >
+            /
+          </span>
+
+          <input
+            id="deployment-search"
+            type="search"
+            placeholder="Buscar por código, título o ubicación..."
+            class="w-full border border-base-600 bg-base-950 py-2.5 pl-7 pr-3 font-mono text-xs text-bone-100 outline-none placeholder:text-base-600 focus:border-gold-500/60"
+          />
+
+        </div>
+
+        <select
+          id="deployment-status"
+          class="border border-base-600 bg-base-950 px-3 py-2.5 font-mono text-xs uppercase tracking-wider text-silver-300 outline-none focus:border-gold-500/60"
+        >
+          <option value="">Todos los estados</option>
+          <option value="draft">Borradores</option>
+          <option value="active">Activos</option>
+          <option value="completed">Finalizados</option>
+          <option value="cancelled">Cancelados</option>
+        </select>
+
+      </div>
+
+    </section>
+
+
+    <!-- ======================================================
+         ERROR
+    ======================================================= -->
+
+    {error && (
+      <div
+        class="mb-5 border border-danger-500/40 bg-danger-500/10 p-4"
+      >
+        <p
+          class="font-mono text-[10px] uppercase tracking-wider text-danger-500"
+        >
+          Error al cargar los despliegues
+        </p>
+
+        <p class="mt-1 font-mono text-xs text-silver-300">
+          {error.message}
+        </p>
+      </div>
+    )}
+
+
+    <!-- ======================================================
+         CONTADOR
+    ======================================================= -->
+
+    <div class="mb-3 flex items-center justify-between">
+
+      <p
+        class="font-mono text-[10px] uppercase tracking-[0.25em] text-silver-300"
+      >
+        Registro
+      </p>
+
+      <p
+        id="deployment-count"
+        class="font-mono text-[10px] uppercase tracking-[0.2em] text-base-600"
+      >
+        {deployments?.length ?? 0} registros
+      </p>
+
+    </div>
+
+
+    <!-- ======================================================
+         LISTADO
+    ======================================================= -->
+
+    <div
+      id="deployment-list"
+      class="space-y-3"
+    >
+
+      {deployments && deployments.length > 0 ? (
+
+        deployments.map((deployment) => {
+
+          const alpha =
+            deployment.deployment_members?.find(
+              (participant) =>
+                participant.role === 'alpha'
+            );
+
+          const alphaMember =
+            Array.isArray(alpha?.members)
+              ? alpha.members[0]
+              : alpha?.members;
+
+          const alphaName =
+            alphaMember?.full_name ??
+            'Sin Alpha';
+
+          const alphaCallsign =
+            alphaMember?.callsign ??
+            '---';
+
+          const duration = formatDuration(
+            deployment.started_at,
+            deployment.ended_at
+          );
+
+          return (
+            <a
+              href={`/despliegues/${deployment.id}`}
+              class="deployment-card brackets group block border border-base-600/60 bg-base-900 transition hover:border-gold-500/50 hover:bg-base-800"
+              data-status={deployment.status}
+              data-search={`${deployment.code} ${deployment.title} ${deployment.location}`.toLowerCase()}
+            >
+
+              <div class="p-4 sm:p-5">
+
+                <!-- CABECERA DE TARJETA -->
+
+                <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+
+                  <div class="min-w-0">
+
+                    <div class="flex flex-wrap items-center gap-2">
+
+                      <span
+                        class="font-mono text-[10px] tracking-[0.2em] text-gold-500"
+                      >
+                        {deployment.code}
+                      </span>
+
+                      <span
+                        class={`border px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider ${statusClass(deployment.status)}`}
+                      >
+                        {statusLabel(deployment.status)}
+                      </span>
+
+                    </div>
+
+                    <h3
+                      class="mt-2 truncate font-display text-xl font-bold uppercase tracking-wide text-bone-100 group-hover:text-gold-500"
+                    >
+                      {deployment.title}
+                    </h3>
+
+                  </div>
+
+                  <span
+                    class="shrink-0 font-mono text-[10px] uppercase tracking-wider text-silver-300"
+                  >
+                    {formatDate(deployment.created_at)}
+                  </span>
+
+                </div>
+
+
+                <!-- INFORMACIÓN -->
+
+                <div
+                  class="mt-5 grid gap-px border border-base-600/40 bg-base-600/40 sm:grid-cols-2 lg:grid-cols-4"
+                >
+
+                  <div class="bg-base-950/60 px-3 py-3">
+
+                    <p
+                      class="font-mono text-[9px] uppercase tracking-[0.2em] text-base-600"
+                    >
+                      Ubicación
+                    </p>
+
+                    <p
+                      class="mt-1 truncate font-display text-sm uppercase tracking-wide text-silver-300"
+                    >
+                      {deployment.location}
+                    </p>
+
+                  </div>
+
+
+                  <div class="bg-base-950/60 px-3 py-3">
+
+                    <p
+                      class="font-mono text-[9px] uppercase tracking-[0.2em] text-base-600"
+                    >
+                      Tipo
+                    </p>
+
+                    <p
+                      class="mt-1 truncate font-display text-sm uppercase tracking-wide text-silver-300"
+                    >
+                      {deployment.type}
+                    </p>
+
+                  </div>
+
+
+                  <div class="bg-base-950/60 px-3 py-3">
+
+                    <p
+                      class="font-mono text-[9px] uppercase tracking-[0.2em] text-base-600"
+                    >
+                      Alpha
+                    </p>
+
+                    <p
+                      class="mt-1 truncate font-display text-sm uppercase tracking-wide text-silver-300"
+                    >
+                      <span class="text-gold-500">
+                        {alphaCallsign}
+                      </span>
+
+                      <span class="text-silver-300">
+                        · {alphaName}
+                      </span>
+                    </p>
+
+                  </div>
+
+
+                  <div class="bg-base-950/60 px-3 py-3">
+
+                    <p
+                      class="font-mono text-[9px] uppercase tracking-[0.2em] text-base-600"
+                    >
+                      {duration ? 'Duración' : 'Inicio'}
+                    </p>
+
+                    <p
+                      class="mt-1 font-mono text-xs tabular-nums text-silver-300"
+                    >
+                      {duration
+                        ? duration
+                        : deployment.started_at
+                          ? formatTime(deployment.started_at)
+                          : 'Sin iniciar'}
+                    </p>
+
+                  </div>
+
+                </div>
+
+
+                <!-- FOOTER -->
+
+                <div
+                  class="mt-4 flex items-center justify-between border-t border-base-600/40 pt-3"
+                >
+
+                  <div class="flex items-center gap-3">
+
+                    {deployment.risk_level && (
+                      <span
+                        class={`font-mono text-[9px] uppercase tracking-[0.18em] ${riskClass(deployment.risk_level)}`}
+                      >
+                        Riesgo {riskLabel(deployment.risk_level)}
+                      </span>
+                    )}
+
+                    {deployment.started_at && (
+                      <span
+                        class="font-mono text-[9px] uppercase tracking-wider text-base-600"
+                      >
+                        Inicio {formatTime(deployment.started_at)}
+                      </span>
+                    )}
+
+                  </div>
+
+                  <span
+                    class="font-mono text-[10px] text-gold-500 opacity-0 transition group-hover:opacity-100"
+                  >
+                    Abrir →
+                  </span>
+
+                </div>
+
+              </div>
+
+            </a>
+          );
+        })
+
+      ) : (
+
+        <div
+          class="brackets border border-base-600/60 bg-base-900 px-6 py-16 text-center"
+        >
+
+          <p
+            class="font-mono text-[10px] uppercase tracking-[0.25em] text-base-600"
+          >
+            Sin registros
+          </p>
+
+          <h3
+            class="mt-2 font-display text-2xl font-bold uppercase tracking-wide text-silver-300"
+          >
+            No hay despliegues registrados
+          </h3>
+
+          <p
+            class="mx-auto mt-2 max-w-md font-mono text-[10px] uppercase tracking-wider text-base-600"
+          >
+            Los despliegues que registres aparecerán aquí.
+          </p>
+
+          <a
+            href="/despliegues/nuevo"
+            class="mt-6 inline-flex border border-gold-500/60 bg-gold-500/10 px-5 py-3 font-mono text-[10px] uppercase tracking-[0.2em] text-gold-500 hover:bg-gold-500 hover:text-base-950"
+          >
+            + Crear primer despliegue
+          </a>
+
+        </div>
+
+      )}
+
+    </div>
+
+  </div>
+</OperatorLayout>
+
+
+<script>
+  const searchInput =
+    document.querySelector('#deployment-search');
+
+  const statusSelect =
+    document.querySelector('#deployment-status');
+
+  const cards = Array.from(
+    document.querySelectorAll('.deployment-card')
+  );
+
+  const count =
+    document.querySelector('#deployment-count');
+
+  function filterDeployments() {
+    const search =
+      searchInput?.value
+        ?.trim()
+        .toLowerCase() ?? '';
+
+    const status =
+      statusSelect?.value ?? '';
+
+    let visible = 0;
+
+    cards.forEach((card) => {
+      const cardSearch =
+        card.getAttribute('data-search') ?? '';
+
+      const cardStatus =
+        card.getAttribute('data-status') ?? '';
+
+      const matchesSearch =
+        !search ||
+        cardSearch.includes(search);
+
+      const matchesStatus =
+        !status ||
+        cardStatus === status;
+
+      const show =
+        matchesSearch &&
+        matchesStatus;
+
+      card.classList.toggle(
+        'hidden',
+        !show
+      );
+
+      if (show) {
+        visible++;
+      }
+    });
+
+    if (count) {
+      count.textContent =
+        `${visible} ${visible === 1 ? 'registro' : 'registros'}`;
+    }
+  }
+
+  searchInput?.addEventListener(
+    'input',
+    filterDeployments
+  );
+
+  statusSelect?.addEventListener(
+    'change',
+    filterDeployments
+  );
+</script>

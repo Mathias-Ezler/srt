@@ -1,0 +1,50 @@
+---
+import BaseLayout from '../layouts/Layout.astro';
+---
+
+<BaseLayout title="Cuenta suspendida | SRT">
+  <main class="min-h-screen flex items-center justify-center bg-zinc-950 px-6">
+    <section class="w-full max-w-lg text-center">
+
+      <div class="rounded-2xl border border-red-900/50 bg-zinc-900 p-8 shadow-2xl">
+
+        <div
+          class="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full border border-red-500/20 bg-red-500/10"
+        >
+          <span class="text-2xl">⚠️</span>
+        </div>
+
+        <h1 class="text-3xl font-bold text-white">
+          Cuenta suspendida
+        </h1>
+
+        <p class="mt-4 leading-7 text-zinc-400">
+          Tu acceso al sistema SRT se encuentra actualmente suspendido.
+        </p>
+
+        <div class="mt-8 rounded-xl border border-red-900/40 bg-red-950/20 p-4">
+          <p class="text-sm text-zinc-500">
+            Estado de cuenta
+          </p>
+
+          <p class="mt-1 font-semibold text-red-400">
+            SUSPENDIDA
+          </p>
+        </div>
+
+        <a
+          href="/"
+          class="mt-6 inline-block text-sm text-zinc-400 transition hover:text-white"
+        >
+          Volver al inicio
+        </a>
+
+      </div>
+
+      <p class="mt-6 text-xs text-zinc-600">
+        SRT · Sistema de Operaciones
+      </p>
+
+    </section>
+  </main>
+</BaseLayout>

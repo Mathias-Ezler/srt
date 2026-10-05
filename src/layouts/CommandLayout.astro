@@ -1,0 +1,74 @@
+---
+import '../styles/global.css';
+
+import CommandHeader from '../components/command/CommandHeader.astro';
+import CommandSidebar from '../components/command/CommandSidebar.astro';
+
+interface Props {
+  title?: string;
+}
+
+const {
+  title = 'Centro de Mando | SRT'
+} = Astro.props;
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" />
+
+    <meta name="generator" content={Astro.generator} />
+
+    <title>{title}</title>
+  </head>
+
+  <body class="min-h-screen bg-base-950 text-bone-100 antialiased">
+
+    <div class="min-h-screen bg-base-950">
+
+      <!-- HEADER -->
+      <CommandHeader />
+
+      <!-- ESTRUCTURA -->
+      <div class="flex">
+
+        <!-- SIDEBAR -->
+        <CommandSidebar />
+
+        <!-- CONTENIDO -->
+        <main class="min-w-0 flex-1 pt-20 lg:ml-64">
+
+          <div class="min-h-[calc(100vh-5rem)] p-6 lg:p-8">
+            <slot />
+          </div>
+
+        </main>
+
+      </div>
+
+    </div>
+
+  </body>
+</html>
+
+<style>
+  html,
+  body {
+    margin: 0;
+    width: 100%;
+    min-height: 100%;
+  }
+
+  body {
+    overflow-x: hidden;
+  }
+</style>

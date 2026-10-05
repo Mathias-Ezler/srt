@@ -1,0 +1,911 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { getCurrentMember } from '../lib/auth';
+
+const { member } = await getCurrentMember(Astro);
+
+if (!member) {
+  return Astro.redirect('/login');
+}
+
+const DEFAULT_PHOTO = '/images/default-operator.jpg';
+
+const memberName = member.full_name ?? 'Sin nombre';
+const memberEmail = member.email ?? 'Sin correo';
+const memberCallsign = member.callsign ?? '';
+const memberRank = member.rank?.name ?? 'Sin rango';
+const memberRankLevel = member.rank?.level ?? null;
+const memberPhotoPath = member.photo_url ?? null;
+const memberInsignia = member.rank?.insignia_url ?? null;
+
+const fileNo = `SRT-${String(member.id ?? '')
+  .replace(/-/g, '')
+  .slice(0, 8)
+  .toUpperCase() || '00000000'}`;
+
+const issued = new Date().toLocaleDateString('es-PY', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+});
+
+const record = [
+  'Despliegues',
+  'Estadísticas',
+  'Condecoraciones',
+  'Historial',
+];
+---
+
+<Layout title="Mi Perfil | SRT">
+  <div class="tac-grid flex h-dvh flex-col overflow-hidden bg-base-950 text-bone-100">
+
+    <!-- BANDA DE CLASIFICACIÓN -->
+    <div class="hazard h-1.5 shrink-0"></div>
+
+    <div
+      class="flex shrink-0 items-center justify-between border-b border-base-600/40 bg-base-950 px-4 py-1.5 font-mono text-[10px] uppercase tracking-[0.25em] text-gold-500 lg:px-6"
+    >
+      <span>SRT // Registro de personal</span>
+
+      <span class="hidden text-silver-300 sm:inline">
+        Uso interno · No difundir
+      </span>
+    </div>
+
+    <!-- CABECERA -->
+    <header
+      class="flex shrink-0 items-center justify-between gap-4 border-b border-base-600/50 bg-base-900/90 px-4 py-3 lg:px-6"
+    >
+      <div class="flex items-center gap-4">
+        <img
+          src="/img/srt-patch.png"
+          alt=""
+          class="h-10 w-auto"
+        />
+
+        <div>
+          <h1
+            class="font-display text-2xl font-bold uppercase leading-none tracking-[0.1em]"
+          >
+            Ficha de operador
+          </h1>
+
+          <p
+            class="mt-1 font-mono text-[10px] tracking-[0.2em] text-silver-300"
+          >
+            {fileNo} · Emitida {issued}
+          </p>
+        </div>
+      </div>
+
+      <a
+        href="/"
+        class="border border-base-600/70 bg-base-800 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.2em] text-silver-300 hover:border-gold-500/60 hover:text-gold-500"
+      >
+        Volver
+      </a>
+    </header>
+
+    <!-- ÁREA CENTRAL -->
+    <main class="scroll-area min-h-0 flex-1 overflow-y-auto p-4 lg:p-6">
+      <div
+        class="mx-auto grid min-h-full max-w-6xl gap-4 lg:grid-cols-[300px_1fr] lg:gap-6"
+      >
+
+        <!-- IDENTIDAD -->
+        <aside
+          class="brackets flex min-h-0 flex-col border border-base-600/60 bg-base-900"
+        >
+          <div
+            class="relative min-h-[240px] flex-1 overflow-hidden bg-base-800"
+          >
+            <img
+              id="profile-photo"
+              src={DEFAULT_PHOTO}
+              alt={`Fotografía de ${memberName}`}
+              class="absolute inset-0 h-full w-full object-cover grayscale-[.3] contrast-110"
+            />
+
+            <div class="scan absolute inset-0"></div>
+
+            <div
+              class="absolute inset-0 bg-gradient-to-t from-base-950 via-base-950/10 to-transparent"
+            ></div>
+
+            <div
+              class="absolute left-3 top-3 border border-gold-500/50 bg-base-950/90 px-2.5 py-1"
+            >
+              <span
+                class="font-mono text-[10px] uppercase tracking-wider text-gold-500"
+              >
+                [<span data-bind="callsign">
+                  {memberCallsign || 'SIN PLACA'}
+                </span>]
+              </span>
+            </div>
+
+            <div class="absolute inset-x-0 bottom-0 p-4">
+              <p
+                class="font-mono text-[10px] tracking-[0.2em] text-silver-300"
+              >
+                Operador SRT
+              </p>
+
+              <h2
+                data-bind="name"
+                class="mt-1 font-display text-2xl font-bold uppercase leading-tight tracking-wide"
+              >
+                {memberName}
+              </h2>
+            </div>
+          </div>
+
+          <div
+            class="flex items-center justify-between gap-3 border-t border-base-600/50 p-4"
+          >
+            <div>
+              <p
+                class="font-mono text-[10px] tracking-[0.2em] text-silver-300"
+              >
+                Rango
+              </p>
+
+              <p
+                class="mt-1 font-display text-xl font-semibold uppercase leading-none text-gold-500"
+              >
+                {memberRank}
+              </p>
+            </div>
+
+            {
+              memberRankLevel !== null && (
+                <div class="flex h-11 w-11 shrink-0 items-center justify-center border border-base-600 bg-base-800">
+                  {memberInsignia ? (
+                    <img
+                      src={memberInsignia}
+                      alt={`Insignia de ${memberRank}`}
+                      class="h-8 w-8 object-contain"
+                    />
+                  ) : (
+                    <span class="font-mono text-sm text-silver-300">
+                      {memberRankLevel}
+                    </span>
+                  )}
+                </div>
+              )
+            }
+          </div>
+
+          <div class="barcode mx-4 mb-4 h-5"></div>
+        </aside>
+
+        <!-- DATOS + REGISTRO -->
+        <div class="flex min-h-0 flex-col gap-4 lg:gap-6">
+
+          <section
+            class="brackets border border-base-600/60 bg-base-900"
+          >
+            <div
+              class="flex items-end justify-between gap-4 border-b border-base-600/50 px-5 py-4"
+            >
+              <div>
+                <p
+                  class="font-mono text-[10px] tracking-[0.25em] text-gold-500"
+                >
+                  Operator record
+                </p>
+
+                <h2
+                  class="mt-1 font-display text-xl font-bold uppercase tracking-wide"
+                >
+                  Información personal
+                </h2>
+              </div>
+
+              <span
+                class="hidden items-center gap-2 font-mono text-[10px] tracking-[0.2em] text-silver-300 sm:flex"
+              >
+                <span class="h-2 w-2 bg-gold-500"></span>
+                Registro SRT
+              </span>
+            </div>
+
+            <form id="profile-form" class="p-5" novalidate>
+
+              <div class="grid gap-x-6 gap-y-4 sm:grid-cols-2">
+
+                <!-- NOMBRE -->
+                <div class="field">
+                  <label for="full_name" class="lbl">
+                    Nombre completo
+                  </label>
+
+                  <input
+                    id="full_name"
+                    name="full_name"
+                    type="text"
+                    value={memberName}
+                    autocomplete="name"
+                    required
+                    class="inp font-sans"
+                  />
+                </div>
+
+                <!-- CALLSIGN -->
+                <div class="field">
+                  <label for="callsign" class="lbl">
+                    Callsign
+                  </label>
+
+                  <input
+                    id="callsign"
+                    name="callsign"
+                    type="text"
+                    value={memberCallsign}
+                    maxlength="20"
+                    placeholder="Ej. B32"
+                    autocomplete="off"
+                    class="inp font-mono uppercase tracking-wider"
+                  />
+                </div>
+
+                <!-- EMAIL -->
+                <div class="field field-locked">
+                  <label for="email" class="lbl">
+                    Correo · Google
+                  </label>
+
+                  <input
+                    id="email"
+                    type="email"
+                    value={memberEmail}
+                    disabled
+                    class="inp font-sans"
+                  />
+                </div>
+
+                <!-- RANGO -->
+                <div class="field field-locked">
+                  <label class="lbl">
+                    Rango operativo · Solo administración
+                  </label>
+
+                  <div class="inp font-display text-lg uppercase leading-[1.4]">
+                    {memberRank}
+                  </div>
+                </div>
+
+                <!-- FOTOGRAFÍA -->
+                <div class="field sm:col-span-2">
+                  <label for="photo_file" class="lbl">
+                    Fotografía de perfil
+                  </label>
+
+                  <div class="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center">
+
+                    <label
+                      for="photo_file"
+                      class="group flex cursor-pointer items-center justify-center border border-base-600 bg-base-800 px-4 py-3 transition hover:border-gold-500/70"
+                    >
+                      <span
+                        class="font-mono text-[10px] uppercase tracking-[0.18em] text-silver-300 transition group-hover:text-gold-500"
+                      >
+                        Seleccionar fotografía
+                      </span>
+                    </label>
+
+                    <input
+                      id="photo_file"
+                      name="photo_file"
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      class="hidden"
+                    />
+
+                    <div class="min-w-0">
+                      <p
+                        id="photo-file-name"
+                        class="truncate font-mono text-[10px] text-silver-300"
+                      >
+                        Ningún archivo seleccionado
+                      </p>
+
+                      <p
+                        class="mt-1 font-mono text-[9px] uppercase tracking-wider text-base-600"
+                      >
+                        JPG · PNG · WEBP · Máx. 5 MB
+                      </p>
+                    </div>
+
+                  </div>
+                </div>
+
+              </div>
+
+              <!-- PIE FORM -->
+              <div
+                class="mt-5 flex flex-col gap-3 border-t border-base-600/50 pt-4 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <p
+                  id="profile-message"
+                  role="status"
+                  aria-live="polite"
+                  class="min-h-[1.25rem] font-mono text-[11px] tracking-wider text-silver-300"
+                >
+                  Sin cambios pendientes
+                </p>
+
+                <button
+                  id="save-profile"
+                  type="submit"
+                  disabled
+                  class="save-btn"
+                >
+                  Guardar cambios
+                </button>
+              </div>
+
+            </form>
+          </section>
+
+          <!-- REGISTRO OPERATIVO -->
+          <section>
+            <div class="mb-3 flex items-center gap-4">
+              <span
+                class="font-mono text-[10px] tracking-[0.25em] text-silver-300"
+              >
+                Operational record
+              </span>
+
+              <div class="h-px flex-1 bg-base-600/50"></div>
+            </div>
+
+            <div
+              class="grid grid-cols-2 gap-px border border-base-600/50 bg-base-600/50 lg:grid-cols-4"
+            >
+              {
+                record.map((label) => (
+                  <div class="bg-base-900 px-4 py-3">
+                    <p
+                      class="font-mono text-[10px] tracking-[0.15em] text-silver-300"
+                    >
+                      {label}
+                    </p>
+
+                    <p class="mt-1 font-display text-2xl leading-none text-base-600">
+                      —
+                    </p>
+
+                    <p
+                      class="mt-1 font-mono text-[9px] tracking-wider text-base-600"
+                    >
+                      Próximamente
+                    </p>
+                  </div>
+                ))
+              }
+            </div>
+          </section>
+
+        </div>
+      </div>
+    </main>
+
+    <!-- PIE -->
+    <footer
+      class="flex shrink-0 items-center justify-between border-t border-base-600/50 bg-base-900 px-4 py-1.5 font-mono text-[10px] tracking-[0.2em] text-base-600 lg:px-6"
+    >
+      <span>SRT / Operator Management System</span>
+
+      <img
+        src="/img/fish-logo.png"
+        alt="Department of Fish & Wildlife"
+        class="h-5 w-auto opacity-70"
+      />
+    </footer>
+
+  </div>
+</Layout>
+
+<style is:global>
+  html {
+    overscroll-behavior: none;
+    scroll-behavior: auto;
+  }
+
+  body {
+    margin: 0;
+    overflow: hidden;
+  }
+</style>
+
+<style>
+  .tac-grid {
+    background-image:
+      linear-gradient(
+        to right,
+        rgb(255 255 255 / 0.025) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        rgb(255 255 255 / 0.025) 1px,
+        transparent 1px
+      );
+
+    background-size: 32px 32px;
+  }
+
+  .hazard {
+    background: repeating-linear-gradient(
+      -45deg,
+      var(--color-gold-500) 0 8px,
+      var(--color-base-950) 8px 16px
+    );
+  }
+
+  .brackets {
+    position: relative;
+  }
+
+  .brackets::before,
+  .brackets::after {
+    content: '';
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--color-gold-500);
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .brackets::before {
+    top: -1px;
+    left: -1px;
+    border-right: 0;
+    border-bottom: 0;
+  }
+
+  .brackets::after {
+    right: -1px;
+    bottom: -1px;
+    border-left: 0;
+    border-top: 0;
+  }
+
+  .scan {
+    background: repeating-linear-gradient(
+      to bottom,
+      rgb(0 0 0 / 0.18) 0 1px,
+      transparent 1px 3px
+    );
+
+    pointer-events: none;
+  }
+
+  .barcode {
+    background: repeating-linear-gradient(
+      to right,
+      var(--color-base-600) 0 2px,
+      transparent 2px 4px,
+      var(--color-base-600) 4px 5px,
+      transparent 5px 9px,
+      var(--color-base-600) 9px 12px,
+      transparent 12px 14px
+    );
+
+    opacity: 0.55;
+  }
+
+  .field {
+    border-left: 2px solid var(--color-base-600);
+    padding-left: 0.75rem;
+  }
+
+  .field:focus-within {
+    border-left-color: var(--color-gold-500);
+  }
+
+  .field-locked {
+    border-left-style: dashed;
+  }
+
+  .lbl {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--color-silver-300);
+  }
+
+  .inp {
+    display: block;
+    width: 100%;
+    margin-top: 0.4rem;
+    padding: 0.6rem 0.75rem;
+    font-size: 0.875rem;
+    color: var(--color-bone-100);
+    background: var(--color-base-800);
+    border: 1px solid rgb(58 63 68 / 0.7);
+    outline: none;
+  }
+
+  .inp:focus {
+    border-color: rgb(227 186 25 / 0.7);
+  }
+
+  .inp::placeholder {
+    color: var(--color-base-600);
+  }
+
+  .field-locked .inp {
+    background: var(--color-base-950);
+    color: var(--color-silver-300);
+    cursor: not-allowed;
+  }
+
+  .save-btn {
+    padding: 0.7rem 1.75rem;
+    font-family: var(--font-display);
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--color-base-950);
+    background: var(--color-gold-500);
+    clip-path: polygon(
+      0 0,
+      calc(100% - 12px) 0,
+      100% 12px,
+      100% 100%,
+      0 100%
+    );
+  }
+
+  .save-btn:disabled {
+    background: var(--color-base-600);
+    color: var(--color-base-800);
+    cursor: not-allowed;
+  }
+
+  .scroll-area {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-base-600) transparent;
+    scrollbar-gutter: stable;
+    overscroll-behavior: contain;
+  }
+</style>
+
+<script
+  define:vars={{
+    memberId: member.id,
+    initialPhotoPath: memberPhotoPath
+  }}
+>
+  const DEFAULT_PHOTO = '/images/default-operator.jpg';
+
+  const form = document.querySelector('#profile-form');
+  const saveButton = document.querySelector('#save-profile');
+  const message = document.querySelector('#profile-message');
+  const photo = document.querySelector('#profile-photo');
+  const photoFile = document.querySelector('#photo_file');
+  const photoFileName = document.querySelector('#photo-file-name');
+  const fullNameInput = document.querySelector('#full_name');
+  const callsignInput = document.querySelector('#callsign');
+
+  let currentPhotoPath = initialPhotoPath || null;
+
+  let saved = {
+    fullName: fullNameInput?.value.trim() || '',
+    callsign:
+      callsignInput?.value.trim().toUpperCase() || '',
+    photoPath: currentPhotoPath || '',
+  };
+
+  const tones = {
+    idle: 'text-silver-300',
+    dirty: 'text-gold-500',
+    success: 'text-gold-500',
+    error: 'text-danger-500',
+  };
+
+  function setMessage(text, tone) {
+    if (!message) return;
+
+    message.textContent = text;
+
+    Object.values(tones).forEach((className) => {
+      message.classList.remove(className);
+    });
+
+    if (tones[tone]) {
+      message.classList.add(tones[tone]);
+    }
+  }
+
+  function bind(key, value) {
+    document
+      .querySelectorAll(`[data-bind="${key}"]`)
+      .forEach((element) => {
+        element.textContent = value;
+      });
+  }
+
+  function refreshState() {
+    const fullName =
+      fullNameInput?.value.trim() || '';
+
+    const callsign =
+      callsignInput?.value.trim().toUpperCase() || '';
+
+    const hasNewPhoto =
+      !!photoFile?.files?.length;
+
+    const dirty =
+      fullName !== saved.fullName ||
+      callsign !== saved.callsign ||
+      hasNewPhoto;
+
+    if (saveButton) {
+      saveButton.disabled = !dirty;
+    }
+
+    setMessage(
+      dirty
+        ? 'Cambios sin guardar'
+        : 'Sin cambios pendientes',
+      dirty ? 'dirty' : 'idle'
+    );
+  }
+
+  photoFile?.addEventListener('change', () => {
+    const file = photoFile.files?.[0];
+
+    if (!file) {
+      if (photoFileName) {
+        photoFileName.textContent =
+          'Ningún archivo seleccionado';
+      }
+
+      refreshState();
+      return;
+    }
+
+    const allowedTypes = [
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+    ];
+
+    if (!allowedTypes.includes(file.type)) {
+      setMessage(
+        'Formato no permitido. Usa JPG, PNG o WEBP.',
+        'error'
+      );
+
+      photoFile.value = '';
+
+      if (photoFileName) {
+        photoFileName.textContent =
+          'Ningún archivo seleccionado';
+      }
+
+      refreshState();
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setMessage(
+        'La fotografía no puede superar los 5 MB.',
+        'error'
+      );
+
+      photoFile.value = '';
+
+      if (photoFileName) {
+        photoFileName.textContent =
+          'Ningún archivo seleccionado';
+      }
+
+      refreshState();
+      return;
+    }
+
+    photoFileName.textContent = file.name;
+
+    const previewUrl =
+      URL.createObjectURL(file);
+
+    if (photo) {
+      photo.src = previewUrl;
+    }
+
+    setMessage(
+      'Nueva fotografía seleccionada.',
+      'dirty'
+    );
+
+    refreshState();
+  });
+
+  form?.addEventListener(
+    'input',
+    refreshState
+  );
+
+  loadPhoto();
+
+  async function loadPhoto() {
+    if (!photo || !currentPhotoPath) {
+      if (photo) {
+        photo.src = DEFAULT_PHOTO;
+      }
+
+      return;
+    }
+
+    if (
+      currentPhotoPath.startsWith('http://') ||
+      currentPhotoPath.startsWith('https://')
+    ) {
+      photo.src = currentPhotoPath;
+      return;
+    }
+
+    try {
+      const response =
+        await fetch(
+          `/api/profile/photo?path=${encodeURIComponent(
+            currentPhotoPath
+          )}`
+        );
+
+      if (!response.ok) {
+        throw new Error(
+          'No se pudo cargar la fotografía.'
+        );
+      }
+
+      const data =
+        await response.json();
+
+      if (data.url) {
+        photo.src = data.url;
+      } else {
+        photo.src = DEFAULT_PHOTO;
+      }
+
+    } catch (error) {
+      console.error(
+        'Error cargando fotografía:',
+        error
+      );
+
+      photo.src = DEFAULT_PHOTO;
+    }
+  }
+
+  form?.addEventListener(
+    'submit',
+    async (event) => {
+      event.preventDefault();
+
+      if (!saveButton) return;
+
+      const fullName =
+        fullNameInput?.value.trim() || '';
+
+      const callsign =
+        callsignInput?.value.trim().toUpperCase() || '';
+
+      const selectedFile =
+        photoFile?.files?.[0] || null;
+
+      if (!fullName) {
+        setMessage(
+          'El nombre completo es obligatorio.',
+          'error'
+        );
+
+        return;
+      }
+
+      saveButton.disabled = true;
+      saveButton.textContent = 'Guardando...';
+
+      try {
+        const formData = new FormData();
+
+        formData.append(
+          'full_name',
+          fullName
+        );
+
+        formData.append(
+          'callsign',
+          callsign
+        );
+
+        if (selectedFile) {
+          formData.append(
+            'photo',
+            selectedFile
+          );
+        }
+
+        const response =
+          await fetch(
+            '/api/profile/update',
+            {
+              method: 'POST',
+              body: formData,
+            }
+          );
+
+          const result = await response.json().catch(() => ({}));
+
+        currentPhotoPath =
+          result.photoPath ||
+          currentPhotoPath;
+
+        saved = {
+          fullName,
+          callsign,
+          photoPath:
+            currentPhotoPath || '',
+        };
+
+        bind(
+          'name',
+          fullName
+        );
+
+        bind(
+          'callsign',
+          callsign || 'SIN PLACA'
+        );
+
+        if (result.photoUrl && photo) {
+          photo.src = result.photoUrl;
+        }
+
+        if (photoFile) {
+          photoFile.value = '';
+        }
+
+        if (photoFileName) {
+          photoFileName.textContent =
+            'Ningún archivo seleccionado';
+        }
+
+        setMessage(
+          'Perfil actualizado correctamente.',
+          'success'
+        );
+
+        saveButton.disabled = true;
+
+      } catch (error) {
+        console.error(
+          'Error actualizando perfil:',
+          error
+        );
+
+        setMessage(
+          error instanceof Error
+            ? error.message
+            : 'No se pudo actualizar el perfil.',
+          'error'
+        );
+
+        refreshState();
+
+      } finally {
+        saveButton.textContent =
+          'Guardar cambios';
+      }
+    }
+  );
+</script>

@@ -1,0 +1,1122 @@
+---
+import OperatorLayout from '../../../layouts/OperatorLayout.astro';
+import { getCurrentMember } from '../../../lib/auth';
+import { createApiClient } from '../../../lib/supabase-api';
+
+const { member } = await getCurrentMember(Astro);
+
+if (!member) {
+  return Astro.redirect('/login');
+}
+
+const id = Astro.params.id;
+
+if (!id) {
+  return Astro.redirect('/despliegues');
+}
+
+const supabase = createApiClient(
+  Astro.request,
+  Astro.cookies
+);
+
+/*
+ * ============================================================
+ * DESPLIEGUE
+ * ============================================================
+ */
+
+const {
+  data: deployment,
+  error: deploymentError,
+} = await supabase
+  .from('deployments')
+  .select(`
+    id,
+    code,
+    title,
+    type,
+    location,
+    status,
+    description,
+    started_at,
+    ended_at,
+    created_at,
+    updated_at,
+    created_by,
+    members:created_by (
+      id,
+      full_name,
+      callsign,
+      photo_url,
+      rank_id
+    )
+  `)
+  .eq('id', id)
+  .single();
+
+if (deploymentError || !deployment) {
+  console.error(
+    'DEPLOYMENT DETAIL ERROR:',
+    deploymentError
+  );
+
+  return Astro.redirect('/despliegues');
+}
+
+/*
+ * A partir de este punto TypeScript sabe que
+ * currentDeployment existe.
+ */
+const currentDeployment = deployment;
+
+/*
+ * ============================================================
+ * PARTICIPANTES
+ * ============================================================
+ */
+
+const {
+  data: participants,
+  error: participantsError,
+} = await supabase
+  .from('deployment_members')
+  .select(`
+    id,
+    member_id,
+    role,
+    members (
+      id,
+      full_name,
+      callsign,
+      photo_url,
+      rank_id
+    )
+  `)
+  .eq('deployment_id', id)
+  .order('role', {
+    ascending: true,
+  });
+
+if (participantsError) {
+  console.error(
+    'PARTICIPANTS ERROR:',
+    participantsError
+  );
+}
+
+/*
+ * ============================================================
+ * SOSPECHOSOS
+ * ============================================================
+ */
+
+const {
+  data: suspects,
+  error: suspectsError,
+} = await supabase
+  .from('deployment_suspects')
+  .select(`
+    id,
+    name,
+    identification,
+    confiscated_items,
+    created_at
+  `)
+  .eq('deployment_id', id)
+  .order('id', {
+    ascending: true,
+  });
+
+if (suspectsError) {
+  console.error(
+    'SUSPECTS ERROR:',
+    suspectsError
+  );
+}
+
+/*
+ * ============================================================
+ * VEHÍCULOS
+ * ============================================================
+ */
+
+const {
+  data: vehicles,
+  error: vehiclesError,
+} = await supabase
+  .from('deployment_vehicles')
+  .select(`
+    id,
+    description,
+    created_at
+  `)
+  .eq('deployment_id', id)
+  .order('id', {
+    ascending: true,
+  });
+
+if (vehiclesError) {
+  console.error(
+    'VEHICLES ERROR:',
+    vehiclesError
+  );
+}
+
+/*
+ * ============================================================
+ * EQUIPAMIENTO
+ * ============================================================
+ */
+
+const {
+  data: equipment,
+  error: equipmentError,
+} = await supabase
+  .from('deployment_equipment')
+  .select(`
+    id,
+    description,
+    created_at
+  `)
+  .eq('deployment_id', id)
+  .order('id', {
+    ascending: true,
+  });
+
+if (equipmentError) {
+  console.error(
+    'EQUIPMENT ERROR:',
+    equipmentError
+  );
+}
+
+/*
+ * ============================================================
+ * GRABACIONES
+ * ============================================================
+ */
+
+const {
+  data: recordings,
+  error: recordingsError,
+} = await supabase
+  .from('deployment_recordings')
+  .select(`
+    id,
+    url,
+    created_at
+  `)
+  .eq('deployment_id', id)
+  .order('id', {
+    ascending: true,
+  });
+
+if (recordingsError) {
+  console.error(
+    'RECORDINGS ERROR:',
+    recordingsError
+  );
+}
+
+/*
+ * ============================================================
+ * HELPERS
+ * ============================================================
+ */
+
+const statusLabels: Record<
+  string,
+  string
+> = {
+  draft: 'BORRADOR',
+  active: 'ACTIVO',
+  completed: 'COMPLETADO',
+  cancelled: 'CANCELADO',
+};
+
+const statusClasses: Record<
+  string,
+  string
+> = {
+  draft:
+    'border-gold-500/30 bg-gold-500/10 text-gold-400',
+
+  active:
+    'border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
+
+  completed:
+    'border-silver-500/30 bg-silver-500/10 text-silver-300',
+
+  cancelled:
+    'border-danger-500/30 bg-danger-500/10 text-danger-400',
+};
+
+function formatDate(
+  value: string | null
+) {
+  if (!value) {
+    return '—';
+  }
+
+  return new Intl.DateTimeFormat(
+    'es-PY',
+    {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }
+  ).format(new Date(value));
+}
+
+function getParticipantName(
+  participant: any
+) {
+  return (
+    participant.members?.full_name ||
+    'Miembro desconocido'
+  );
+}
+
+function getParticipantCallsign(
+  participant: any
+) {
+  return (
+    participant.members?.callsign ||
+    '—'
+  );
+}
+
+function getRoleLabel(
+  role: string
+) {
+  return role === 'alpha'
+    ? 'ALPHA'
+    : 'OPERADOR';
+}
+
+function getDuration() {
+  if (
+    !currentDeployment.started_at ||
+    !currentDeployment.ended_at
+  ) {
+    return null;
+  }
+
+  const start =
+    new Date(
+      currentDeployment.started_at
+    ).getTime();
+
+  const end =
+    new Date(
+      currentDeployment.ended_at
+    ).getTime();
+
+  const seconds =
+    Math.max(0, end - start) / 1000;
+
+  const hours = Math.floor(
+    seconds / 3600
+  );
+
+  const minutes = Math.floor(
+    (seconds % 3600) / 60
+  );
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+
+  return `${minutes}m`;
+}
+
+const duration =
+  getDuration();
+
+const alpha =
+  participants?.find(
+    (participant) =>
+      participant.role === 'alpha'
+  );
+
+const operators =
+  participants?.filter(
+    (participant) =>
+      participant.role !== 'alpha'
+  ) ?? [];
+---
+
+<OperatorLayout
+  title={`Despliegue ${currentDeployment.code}`}
+  active="operaciones"
+>
+  <div
+    class="mx-auto w-full max-w-7xl space-y-6"
+  >
+
+    <!-- =====================================================
+         HEADER
+    ====================================================== -->
+
+    <section
+      class="relative overflow-hidden border border-base-600 bg-base-900"
+    >
+      <div
+        class="absolute inset-0 tac-grid opacity-30"
+      ></div>
+
+      <div
+        class="relative flex flex-col gap-6 p-6 lg:p-8"
+      >
+
+        <!-- HEADER PRINCIPAL -->
+
+        <div
+          class="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between"
+        >
+
+          <div>
+
+            <div
+              class="mb-3 flex flex-wrap items-center gap-3"
+            >
+
+              <span
+                class="font-mono text-xs font-bold tracking-[0.25em] text-gold-500"
+              >
+                DESPLIEGUE
+              </span>
+
+              <span
+                class="font-mono text-xs text-silver-500"
+              >
+                //
+              </span>
+
+              <span
+                class="font-mono text-xs font-bold tracking-[0.2em] text-silver-300"
+              >
+                {currentDeployment.code}
+              </span>
+
+            </div>
+
+            <h1
+              class="font-display text-3xl font-black uppercase tracking-tight text-bone-100 sm:text-4xl"
+            >
+              {currentDeployment.title}
+            </h1>
+
+            <p
+              class="mt-2 max-w-3xl text-sm text-silver-400"
+            >
+              {currentDeployment.type}
+
+              <span
+                class="mx-2 text-base-500"
+              >
+                /
+              </span>
+
+              {currentDeployment.location}
+            </p>
+
+          </div>
+
+          <div
+            class={`inline-flex w-fit items-center border px-4 py-2 font-mono text-xs font-bold tracking-[0.15em] ${
+              statusClasses[
+                currentDeployment.status
+              ] ??
+              'border-base-600 bg-base-800 text-silver-300'
+            }`}
+          >
+
+            <span
+              class="mr-2 h-2 w-2 rounded-full bg-current"
+            ></span>
+
+            {
+              statusLabels[
+                currentDeployment.status
+              ] ??
+              currentDeployment.status
+            }
+
+          </div>
+
+        </div>
+
+        <!-- INFORMACIÓN TEMPORAL -->
+
+        <div
+          class="grid gap-px border border-base-700 bg-base-700 sm:grid-cols-2 lg:grid-cols-4"
+        >
+
+          <div
+            class="bg-base-900 p-4"
+          >
+            <p
+              class="font-mono text-[10px] font-bold tracking-[0.2em] text-silver-500"
+            >
+              CREADO
+            </p>
+
+            <p
+              class="mt-1 text-sm text-bone-100"
+            >
+              {
+                formatDate(
+                  currentDeployment.created_at
+                )
+              }
+            </p>
+          </div>
+
+          <div
+            class="bg-base-900 p-4"
+          >
+            <p
+              class="font-mono text-[10px] font-bold tracking-[0.2em] text-silver-500"
+            >
+              INICIO
+            </p>
+
+            <p
+              class="mt-1 text-sm text-bone-100"
+            >
+              {
+                formatDate(
+                  currentDeployment.started_at
+                )
+              }
+            </p>
+          </div>
+
+          <div
+            class="bg-base-900 p-4"
+          >
+            <p
+              class="font-mono text-[10px] font-bold tracking-[0.2em] text-silver-500"
+            >
+              FINALIZACIÓN
+            </p>
+
+            <p
+              class="mt-1 text-sm text-bone-100"
+            >
+              {
+                formatDate(
+                  currentDeployment.ended_at
+                )
+              }
+            </p>
+          </div>
+
+          <div
+            class="bg-base-900 p-4"
+          >
+            <p
+              class="font-mono text-[10px] font-bold tracking-[0.2em] text-silver-500"
+            >
+              DURACIÓN
+            </p>
+
+            <p
+              class="mt-1 text-sm font-semibold text-gold-400"
+            >
+              {duration ?? 'Pendiente'}
+            </p>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- =====================================================
+         CONTROL OPERATIVO
+    ====================================================== -->
+
+    <section
+      class="flex flex-col gap-3 border border-base-700 bg-base-900 p-4 sm:flex-row sm:items-center sm:justify-between"
+    >
+
+      <div>
+
+        <p
+          class="font-mono text-xs font-bold tracking-[0.2em] text-silver-500"
+        >
+          CONTROL OPERATIVO
+        </p>
+
+        <p
+          class="mt-1 text-sm text-silver-400"
+        >
+          Gestión del estado del despliegue.
+        </p>
+
+      </div>
+
+      <div
+        class="flex flex-wrap gap-2"
+      >
+
+        {
+          currentDeployment.status ===
+            'draft' && (
+            <button
+              id="start-deployment"
+              type="button"
+              class="border border-emerald-500/40 bg-emerald-500/10 px-5 py-3 font-mono text-xs font-bold tracking-[0.15em] text-emerald-400 transition hover:bg-emerald-500/20"
+            >
+              INICIAR DESPLIEGUE
+            </button>
+          )
+        }
+
+        {
+          currentDeployment.status ===
+            'active' && (
+            <button
+              id="finish-deployment"
+              type="button"
+              class="border border-gold-500/40 bg-gold-500/10 px-5 py-3 font-mono text-xs font-bold tracking-[0.15em] text-gold-400 transition hover:bg-gold-500/20"
+            >
+              FINALIZAR DESPLIEGUE
+            </button>
+          )
+        }
+
+        <a
+          href="/despliegues"
+          class="border border-base-600 bg-base-800 px-5 py-3 font-mono text-xs font-bold tracking-[0.15em] text-silver-300 transition hover:border-base-500 hover:text-bone-100"
+        >
+          VOLVER
+        </a>
+
+      </div>
+
+    </section>
+
+    <!-- =====================================================
+         RESUMEN
+    ====================================================== -->
+
+    <section
+      class="border border-base-700 bg-base-900"
+    >
+
+      <div
+        class="border-b border-base-700 px-5 py-4"
+      >
+        <p
+          class="font-mono text-xs font-bold tracking-[0.2em] text-gold-500"
+        >
+          01 // RESUMEN GENERAL
+        </p>
+      </div>
+
+      <div class="p-5">
+
+        {
+          currentDeployment.description ? (
+            <p
+              class="whitespace-pre-wrap text-sm leading-7 text-silver-300"
+            >
+              {
+                currentDeployment.description
+              }
+            </p>
+          ) : (
+            <p
+              class="font-mono text-xs text-silver-600"
+            >
+              SIN RESUMEN REGISTRADO
+            </p>
+          )
+        }
+
+      </div>
+
+    </section>
+
+    <!-- =====================================================
+         PERSONAL DESPLEGADO
+    ====================================================== -->
+
+    <section
+      class="border border-base-700 bg-base-900"
+    >
+
+      <div
+        class="flex items-center justify-between border-b border-base-700 px-5 py-4"
+      >
+
+        <div>
+
+          <p
+            class="font-mono text-xs font-bold tracking-[0.2em] text-gold-500"
+          >
+            02 // PERSONAL DESPLEGADO
+          </p>
+
+          <p
+            class="mt-1 text-xs text-silver-500"
+          >
+            {participants?.length ?? 0}
+            miembros
+          </p>
+
+        </div>
+
+      </div>
+
+      <div class="p-5">
+
+        {
+          participants &&
+          participants.length > 0 ? (
+            <div
+              class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+            >
+
+              {
+                participants.map(
+                  (participant) => (
+                    <div
+                      class="border border-base-700 bg-base-800 p-4"
+                    >
+
+                      <div
+                        class="flex items-center gap-3"
+                      >
+
+                        <div
+                          class="flex h-10 w-10 shrink-0 items-center justify-center border border-base-600 bg-base-900 font-mono text-xs font-bold text-gold-500"
+                        >
+                          {
+                            getParticipantCallsign(
+                              participant
+                            ).slice(0, 3)
+                          }
+                        </div>
+
+                        <div
+                          class="min-w-0"
+                        >
+
+                          <p
+                            class="truncate text-sm font-semibold text-bone-100"
+                          >
+                            {
+                              getParticipantName(
+                                participant
+                              )
+                            }
+                          </p>
+
+                          <p
+                            class="font-mono text-xs text-silver-500"
+                          >
+                            {
+                              getParticipantCallsign(
+                                participant
+                              )
+                            }
+                          </p>
+
+                        </div>
+
+                      </div>
+
+                      <div
+                        class="mt-3 border-t border-base-700 pt-3"
+                      >
+
+                        <span
+                          class={`font-mono text-[10px] font-bold tracking-[0.15em] ${
+                            participant.role ===
+                            'alpha'
+                              ? 'text-gold-400'
+                              : 'text-silver-500'
+                          }`}
+                        >
+                          {
+                            getRoleLabel(
+                              participant.role
+                            )
+                          }
+                        </span>
+
+                      </div>
+
+                    </div>
+                  )
+                )
+              }
+
+            </div>
+          ) : (
+            <p
+              class="font-mono text-xs text-silver-600"
+            >
+              SIN PARTICIPANTES REGISTRADOS.
+            </p>
+          )
+        }
+
+      </div>
+
+    </section>
+
+    <!-- =====================================================
+         SOSPECHOSOS / VEHÍCULOS
+    ====================================================== -->
+
+    <div
+      class="grid gap-6 lg:grid-cols-2"
+    >
+
+      <!-- SOSPECHOSOS -->
+
+      <section
+        class="border border-base-700 bg-base-900"
+      >
+
+        <div
+          class="border-b border-base-700 px-5 py-4"
+        >
+
+          <p
+            class="font-mono text-xs font-bold tracking-[0.2em] text-gold-500"
+          >
+            03 // SOSPECHOSOS
+          </p>
+
+        </div>
+
+        <div class="p-5">
+
+          {
+            suspects &&
+            suspects.length > 0 ? (
+              <div class="space-y-3">
+
+                {
+                  suspects.map(
+                    (suspect, index) => (
+                      <div
+                        class="border border-base-700 bg-base-800 p-4"
+                      >
+
+                        <div
+                          class="flex gap-3"
+                        >
+
+                          <span
+                            class="font-mono text-xs text-gold-500"
+                          >
+                            {
+                              String(
+                                index + 1
+                              ).padStart(
+                                2,
+                                '0'
+                              )
+                            }
+                          </span>
+
+                          <div
+                            class="min-w-0 flex-1"
+                          >
+
+                            <p
+                              class="text-sm font-semibold text-bone-100"
+                            >
+                              {
+                                suspect.identification ||
+                                suspect.name ||
+                                'Sin identificación'
+                              }
+                            </p>
+
+                            <p
+                              class="mt-2 font-mono text-[10px] font-bold tracking-[0.15em] text-silver-500"
+                            >
+                              OBJETOS INCAUTADOS
+                            </p>
+
+                            <p
+                              class="mt-1 whitespace-pre-wrap text-sm text-silver-300"
+                            >
+                              {
+                                suspect.confiscated_items ||
+                                'Ninguno registrado'
+                              }
+                            </p>
+
+                          </div>
+
+                        </div>
+
+                      </div>
+                    )
+                  )
+                }
+
+              </div>
+            ) : (
+              <p
+                class="font-mono text-xs text-silver-600"
+              >
+                NO SE REGISTRARON SOSPECHOSOS.
+              </p>
+            )
+          }
+
+        </div>
+
+      </section>
+
+      <!-- VEHÍCULOS -->
+
+      <section
+        class="border border-base-700 bg-base-900"
+      >
+
+        <div
+          class="border-b border-base-700 px-5 py-4"
+        >
+
+          <p
+            class="font-mono text-xs font-bold tracking-[0.2em] text-gold-500"
+          >
+            04 // VEHÍCULOS UTILIZADOS
+          </p>
+
+        </div>
+
+        <div class="p-5">
+
+          {
+            vehicles &&
+            vehicles.length > 0 ? (
+              <div class="space-y-2">
+
+                {
+                  vehicles.map(
+                    (vehicle, index) => (
+                      <div
+                        class="flex items-center gap-3 border border-base-700 bg-base-800 p-4"
+                      >
+
+                        <span
+                          class="font-mono text-xs text-gold-500"
+                        >
+                          {
+                            String(
+                              index + 1
+                            ).padStart(
+                              2,
+                              '0'
+                            )
+                          }
+                        </span>
+
+                        <span
+                          class="text-sm text-silver-300"
+                        >
+                          {
+                            vehicle.description
+                          }
+                        </span>
+
+                      </div>
+                    )
+                  )
+                }
+
+              </div>
+            ) : (
+              <p
+                class="font-mono text-xs text-silver-600"
+              >
+                NO SE REGISTRARON VEHÍCULOS.
+              </p>
+            )
+          }
+
+        </div>
+
+      </section>
+
+    </div>
+
+    <!-- =====================================================
+         MATERIAL UTILIZADO
+    ====================================================== -->
+
+    <section
+      class="border border-base-700 bg-base-900"
+    >
+
+      <div
+        class="border-b border-base-700 px-5 py-4"
+      >
+
+        <p
+          class="font-mono text-xs font-bold tracking-[0.2em] text-gold-500"
+        >
+          05 // MATERIAL UTILIZADO
+        </p>
+
+      </div>
+
+      <div class="p-5">
+
+        {
+          equipment &&
+          equipment.length > 0 ? (
+            <div
+              class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3"
+            >
+
+              {
+                equipment.map(
+                  (item, index) => (
+                    <div
+                      class="border border-base-700 bg-base-800 p-4"
+                    >
+
+                      <p
+                        class="font-mono text-[10px] font-bold text-gold-500"
+                      >
+                        {
+                          String(
+                            index + 1
+                          ).padStart(
+                            2,
+                            '0'
+                          )
+                        }
+                      </p>
+
+                      <p
+                        class="mt-2 text-sm text-silver-300"
+                      >
+                        {
+                          item.description
+                        }
+                      </p>
+
+                    </div>
+                  )
+                )
+              }
+
+            </div>
+          ) : (
+            <p
+              class="font-mono text-xs text-silver-600"
+            >
+              NO SE REGISTRÓ MATERIAL.
+            </p>
+          )
+        }
+
+      </div>
+
+    </section>
+
+    <!-- =====================================================
+         GRABACIONES
+    ====================================================== -->
+
+    <section
+      class="border border-base-700 bg-base-900"
+    >
+
+      <div
+        class="border-b border-base-700 px-5 py-4"
+      >
+
+        <p
+          class="font-mono text-xs font-bold tracking-[0.2em] text-gold-500"
+        >
+          06 // GRABACIONES
+        </p>
+
+      </div>
+
+      <div class="p-5">
+
+        {
+          recordings &&
+          recordings.length > 0 ? (
+            <div class="space-y-2">
+
+              {
+                recordings.map(
+                  (recording, index) => (
+                    <a
+                      href={recording.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="flex items-center justify-between border border-base-700 bg-base-800 p-4 transition hover:border-gold-500/40 hover:bg-base-800/80"
+                    >
+
+                      <div
+                        class="min-w-0"
+                      >
+
+                        <p
+                          class="font-mono text-[10px] font-bold tracking-[0.15em] text-gold-500"
+                        >
+                          GRABACIÓN {
+                            String(
+                              index + 1
+                            ).padStart(
+                              2,
+                              '0'
+                            )
+                          }
+                        </p>
+
+                        <p
+                          class="mt-1 truncate text-sm text-silver-300"
+                        >
+                          {
+                            recording.url
+                          }
+                        </p>
+
+                      </div>
+
+                      <span
+                        class="ml-4 shrink-0 font-mono text-xs text-silver-500"
+                      >
+                        ABRIR →
+                      </span>
+
+                    </a>
+                  )
+                )
+              }
+
+            </div>
+          ) : (
+            <p
+              class="font-mono text-xs text-silver-600"
+            >
+              NO SE REGISTRARON GRABACIONES.
+            </p>
+          )
+        }
+
+      </div>
+
+    </section>
+
+  </div>
+</OperatorLayout>

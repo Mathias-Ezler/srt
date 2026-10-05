@@ -1,0 +1,92 @@
+---
+interface Props {
+  name: string;
+  plate: string;
+  rank: string;
+  photo?: string;
+  id: string;
+  status?: 'active' | 'pending' | 'suspended';
+}
+
+const {
+  name,
+  plate,
+  rank,
+  photo = '/images/default-operator.jpg',
+  id,
+  status = 'active',
+} = Astro.props;
+
+const statuses = {
+  active: { label: 'Activo', dot: 'bg-green-500', box: 'border-green-500/30', text: 'text-green-400' },
+  pending: { label: 'Pendiente', dot: 'bg-gold-500', box: 'border-gold-500/30', text: 'text-gold-500' },
+  suspended: { label: 'Suspendido', dot: 'bg-danger-500', box: 'border-danger-500/30', text: 'text-danger-500' },
+};
+
+const st = statuses[status];
+const fileNo = String(id).replace(/-/g, '').slice(0, 6).toUpperCase();
+---
+
+<a
+  href={`/panel/miembros/${id}`}
+  class="card brackets group block border border-base-600/60 bg-base-900 hover:border-gold-500/60 focus-visible:border-gold-500 focus-visible:outline-none"
+>
+  <!-- CABECERA DE EXPEDIENTE -->
+  <div class="flex items-center justify-between border-b border-base-600/50 px-3 py-1.5">
+    <span class="font-mono text-[10px] uppercase tracking-[0.2em] text-silver-300">
+      EXP-{fileNo}
+    </span>
+
+    <span class:list={['flex items-center gap-1.5 border px-1.5 py-0.5', st.box]}>
+      <span class:list={['h-1.5 w-1.5', st.dot]}></span>
+      <span class:list={['font-mono text-[9px] uppercase tracking-wider', st.text]}>
+        {st.label}
+      </span>
+    </span>
+  </div>
+
+  <!-- FOTO -->
+  <div class="relative aspect-[4/5] overflow-hidden bg-base-800">
+    <img
+      src={photo}
+      alt={`Fotografía de ${name}`}
+      loading="lazy"
+      class="absolute inset-0 h-full w-full object-cover grayscale-[.45] contrast-110 transition-[filter] duration-200 group-hover:grayscale-0"
+      onerror="this.onerror=null;this.src='/images/default-operator.jpg'"
+    />
+    <div class="scan absolute inset-0"></div>
+    <div class="absolute inset-0 bg-gradient-to-t from-base-950 via-transparent to-transparent opacity-90"></div>
+
+    <div class="absolute bottom-3 left-3 border border-gold-500/50 bg-base-950/90 px-2 py-1">
+      <span class="font-mono text-[10px] uppercase tracking-wider text-gold-500">
+        [{plate}]
+      </span>
+    </div>
+  </div>
+
+  <!-- DATOS -->
+  <div class="px-3 py-3">
+    <h3 class="truncate font-display text-lg font-semibold uppercase tracking-wide text-bone-100">
+      {name}
+    </h3>
+    <p class="mt-0.5 truncate font-mono text-[11px] uppercase tracking-[0.12em] text-gold-500">
+      {rank}
+    </p>
+  </div>
+
+  <!-- ACCIÓN (siempre visible: sirve también en celular) -->
+  <div
+    class="flex items-center justify-between border-t border-base-600/50 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.2em] text-silver-300 group-hover:text-gold-500"
+  >
+    <span>Abrir ficha</span>
+    <span aria-hidden="true">→</span>
+  </div>
+</a>
+
+<style>
+  /* Las esquinas doradas solo aparecen al apuntar o enfocar la tarjeta */
+  .card:not(:hover):not(:focus-visible)::before,
+  .card:not(:hover):not(:focus-visible)::after {
+    opacity: 0;
+  }
+</style>

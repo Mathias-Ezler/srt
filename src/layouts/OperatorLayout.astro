@@ -1,0 +1,267 @@
+---
+import Layout from './Layout.astro';
+
+interface Props {
+  title?: string;
+  /** Clave de la sección activa: inicio | miembros | mapa | estadisticas | perfil */
+  active?: string;
+  /** Muestra el acceso al Centro de Mando */
+  isLeader?: boolean;
+}
+
+const { title = 'Panel', active = '', isLeader = false } = Astro.props;
+
+// href null = sección aún sin página (se muestra como "Pronto")
+const nav = [
+  { key: 'inicio', label: 'Inicio', code: '01', href: '/' },
+  { key: 'operaciones', label: 'Despliegues', code: '02', href: '/despliegues' },
+  { key: 'miembros', label: 'Miembros', code: '03', href: '/miembros' },
+  { key: 'mapa', label: 'Mapa', code: '04', href: '/mapa' },
+  { key: 'estadisticas', label: 'Estadísticas', code: '05', href: '/estadisticas' },
+  { key: 'perfil', label: 'Mi perfil', code: '06', href: '/perfil' },
+];
+
+const mobileNav = nav.filter((item) => item.href);
+---
+
+<Layout title={`${title} | SRT`}>
+  <div class="tac-grid flex h-dvh flex-col overflow-hidden bg-base-950 text-bone-100">
+    <!-- BANDA DE CLASIFICACIÓN -->
+    <div class="hazard h-1.5 shrink-0"></div>
+
+    <div
+      class="flex shrink-0 items-center justify-between border-b border-base-600/40 bg-base-950 px-4 py-1.5 font-mono text-[10px] uppercase tracking-[0.25em] text-gold-500 lg:px-6"
+    >
+      <span>SRT // Panel del operador</span>
+      <span class="hidden text-silver-300 sm:inline">Uso interno · No difundir</span>
+    </div>
+
+    <!-- CABECERA -->
+    <header
+      class="flex shrink-0 items-center justify-between gap-4 border-b border-base-600/50 bg-base-900/90 px-4 py-3 lg:px-6"
+    >
+      <div class="flex items-center gap-4">
+        <img src="/img/srt-patch.png" alt="" class="h-10 w-auto" />
+        <div>
+          <h1 class="font-display text-2xl font-bold uppercase leading-none tracking-[0.1em]">
+            Special Response Team
+          </h1>
+          <p class="mt-1 font-mono text-[10px] uppercase tracking-[0.2em] text-silver-300">
+            San Andreas Fish &amp; Wildlife
+          </p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-4">
+        <div class="hidden border-l-2 border-base-600 pl-3 text-right lg:block">
+          <p class="font-mono text-[10px] uppercase tracking-[0.25em] text-silver-300">Hora local</p>
+          <time id="hdr-clock" class="font-mono text-sm tabular-nums text-gold-500">--:--:--</time>
+        </div>
+
+        {isLeader && (
+          <a
+            href="/panel"
+            class="border border-gold-500/60 bg-gold-500/10 px-4 py-2 font-mono text-[10px] uppercase tracking-[0.2em] text-gold-500 hover:bg-gold-500 hover:text-base-950"
+          >
+            Centro de Mando
+          </a>
+        )}
+      </div>
+    </header>
+
+    <!-- CUERPO -->
+    <div class="flex min-h-0 flex-1">
+      <!-- NAVEGACIÓN (escritorio) -->
+      <aside class="hidden w-56 shrink-0 flex-col border-r border-base-600/50 bg-base-900/90 lg:flex">
+        <nav class="thin-scroll min-h-0 flex-1 overflow-y-auto p-3" aria-label="Navegación principal">
+          <p class="mb-3 px-3 font-mono text-[10px] uppercase tracking-[0.25em] text-silver-300">
+            Navegación
+          </p>
+
+          {nav.map((item) =>
+            item.href ? (
+              <a
+                href={item.href}
+                aria-current={active === item.key ? 'page' : undefined}
+                class:list={[
+                  'group mb-1 flex items-center gap-3 border-l-2 px-4 py-3',
+                  active === item.key
+                    ? 'border-gold-500 bg-gold-500/10'
+                    : 'border-transparent hover:border-base-600 hover:bg-base-800',
+                ]}
+              >
+                <span class="font-mono text-[11px] text-gold-500">{item.code}</span>
+                <span
+                  class:list={[
+                    'font-display text-sm uppercase tracking-wider',
+                    active === item.key ? 'text-bone-100' : 'text-silver-300 group-hover:text-bone-100',
+                  ]}
+                >
+                  {item.label}
+                </span>
+              </a>
+            ) : (
+              <div class="mb-1 flex items-center gap-3 border-l-2 border-transparent px-4 py-3 opacity-50">
+                <span class="font-mono text-[11px] text-base-600">{item.code}</span>
+                <span class="font-display text-sm uppercase tracking-wider text-silver-300">
+                  {item.label}
+                </span>
+                <span class="ml-auto font-mono text-[9px] uppercase tracking-wider text-base-600">
+                  Pronto
+                </span>
+              </div>
+            )
+          )}
+        </nav>
+
+        <div class="shrink-0 border-t border-base-600/40 p-4">
+          <div class="barcode mb-3 h-4"></div>
+          <form method="POST" action="/api/auth/signout">
+            <button
+              type="submit"
+              class="w-full border border-base-600/60 px-4 py-2.5 font-display text-xs uppercase tracking-wider text-silver-300 hover:border-gold-500/50 hover:bg-base-800"
+            >
+              Cerrar sesión
+            </button>
+          </form>
+        </div>
+      </aside>
+
+      <!-- CONTENIDO (único scroll posible) -->
+      <main class="scroll-area min-h-0 flex-1 overflow-y-auto p-4 lg:p-6">
+        <slot />
+      </main>
+    </div>
+
+    <!-- NAVEGACIÓN (móvil) -->
+    <nav
+      class="grid shrink-0 grid-cols-5 border-t border-base-600/60 bg-base-900 lg:hidden"
+      aria-label="Navegación principal"
+    >
+      {mobileNav.map((item) => (
+        <a
+          href={item.href}
+          aria-current={active === item.key ? 'page' : undefined}
+          class:list={[
+            'flex h-14 flex-col items-center justify-center gap-0.5 border-t-2',
+            active === item.key
+              ? 'border-gold-500 bg-gold-500/10 text-gold-500'
+              : 'border-transparent text-silver-300',
+          ]}
+        >
+          <span class="font-mono text-[10px]">{item.code}</span>
+          <span class="max-w-full truncate px-1 font-display text-[11px] uppercase tracking-wide">
+            {item.label}
+          </span>
+        </a>
+      ))}
+    </nav>
+
+    <!-- PIE -->
+    <footer
+      class="hidden shrink-0 items-center justify-between border-t border-base-600/50 bg-base-900 px-6 py-1.5 font-mono text-[10px] tracking-[0.2em] text-base-600 lg:flex"
+    >
+      <span>SRT / Operator Management System</span>
+      <img src="/img/fish-logo.png" alt="Department of Fish & Wildlife" class="h-5 w-auto opacity-70" />
+    </footer>
+  </div>
+</Layout>
+
+<script>
+  const clock = document.querySelector<HTMLElement>('#hdr-clock');
+
+  if (clock) {
+    const fmt = new Intl.DateTimeFormat('es-PY', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+    const tick = () => {
+      clock.textContent = fmt.format(new Date());
+    };
+    tick();
+    setInterval(tick, 1000);
+  }
+</script>
+
+<!--
+  Utilidades del estilo ficha táctica. Valores en hex a propósito, para no
+  depender de que las variables del tema estén generadas. Cuando muevas estas
+  clases a global.css puedes borrar este bloque.
+-->
+<style is:global>
+  html {
+    overscroll-behavior: none;
+    scroll-behavior: auto;
+  }
+  body {
+    margin: 0;
+    overflow: hidden;
+  }
+
+  .tac-grid {
+    background-image:
+      linear-gradient(to right, rgb(255 255 255 / 0.025) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(255 255 255 / 0.025) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  .hazard {
+    background: repeating-linear-gradient(-45deg, #e3ba19 0 8px, #0b0c0d 8px 16px);
+  }
+
+  .brackets {
+    position: relative;
+  }
+  .brackets::before,
+  .brackets::after {
+    content: '';
+    position: absolute;
+    width: var(--b, 14px);
+    height: var(--b, 14px);
+    border: 2px solid #e3ba19;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .brackets::before {
+    top: -1px;
+    left: -1px;
+    border-right: 0;
+    border-bottom: 0;
+  }
+  .brackets::after {
+    right: -1px;
+    bottom: -1px;
+    border-left: 0;
+    border-top: 0;
+  }
+
+  .scan {
+    background: repeating-linear-gradient(to bottom, rgb(0 0 0 / 0.18) 0 1px, transparent 1px 3px);
+    pointer-events: none;
+  }
+
+  .barcode {
+    background: repeating-linear-gradient(
+      to right,
+      #3a3f44 0 2px,
+      transparent 2px 4px,
+      #3a3f44 4px 5px,
+      transparent 5px 9px,
+      #3a3f44 9px 12px,
+      transparent 12px 14px
+    );
+    opacity: 0.55;
+  }
+
+  .scroll-area,
+  .thin-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: #3a3f44 transparent;
+    overscroll-behavior: contain;
+  }
+  .scroll-area {
+    scrollbar-gutter: stable;
+  }
+</style>

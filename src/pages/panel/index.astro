@@ -1,0 +1,58 @@
+---
+import CommandLayout from '../../layouts/CommandLayout.astro';
+import MemberGrid from '../../components/command/MemberGrid.astro';
+---
+
+<CommandLayout>
+
+  <!-- CABECERA -->
+  <section class="mb-8">
+    <div
+      class="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between"
+    >
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="h-1.5 w-1.5 bg-gold-500"></span>
+
+          <span
+            class="font-mono text-[9px] uppercase tracking-[0.3em] text-gold-500"
+          >
+            Personnel Management
+          </span>
+        </div>
+
+        <h1
+          class="mt-2 font-display text-4xl font-bold uppercase tracking-wide text-bone-100 lg:text-5xl"
+        >
+          Personal Operativo
+        </h1>
+
+        <p
+          class="mt-2 max-w-2xl text-sm leading-relaxed text-silver-300"
+        >
+          Gestión y supervisión del personal perteneciente
+          al Special Response Team.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SEPARADOR -->
+  <div class="mb-6 flex items-center gap-4">
+    <div class="h-px flex-1 bg-base-600/40"></div>
+
+    <span
+      class="font-mono text-[9px] uppercase tracking-[0.25em] text-base-600"
+    >
+      Personnel Registry
+    </span>
+
+    <div class="h-px flex-1 bg-base-600/40"></div>
+  </div>
+
+  <!-- MIEMBROS -->
+  <section>
+    <MemberGrid />
+  </section>
+
+</CommandLayout>

@@ -1,0 +1,165 @@
+---
+interface Props {
+  /** Solicitudes pendientes; si es 0 no se muestra el contador */
+  pendingRequests?: number;
+}
+
+const { pendingRequests = 0 } = Astro.props;
+
+const path = Astro.url.pathname.replace(/\/$/, '') || '/';
+
+const items = [
+  {
+    code: '01',
+    label: 'Personal',
+    href: '/panel',
+    tone: 'text-gold-500',
+    active: path === '/panel' || path.startsWith('/panel/miembros'),
+    count: 0,
+  },
+  {
+    code: '02',
+    label: 'Despliegues',
+    href: '/panel/despliegues',
+    tone: 'text-silver-300',
+    active: path.startsWith('/panel/despliegues'),
+    count: 0,
+  },
+  {
+    code: '03',
+    label: 'Estadísticas',
+    href: '/panel/estadisticas',
+    tone: 'text-silver-300',
+    active: path.startsWith('/panel/estadisticas'),
+    count: 0,
+  },
+  {
+    code: '04',
+    label: 'Sanciones',
+    href: '/panel/sanciones',
+    tone: 'text-danger-500',
+    active: path.startsWith('/panel/sanciones'),
+    count: 0,
+  },
+  {
+    code: '05',
+    label: 'Solicitudes',
+    href: '/panel/solicitudes',
+    tone: 'text-blue-600',
+    active: path.startsWith('/panel/solicitudes'),
+    count: pendingRequests,
+  },
+];
+---
+
+<!-- ESCRITORIO -->
+<aside
+  class="tac-grid fixed bottom-0 left-0 top-20 z-40 hidden w-64 border-r border-base-600/50 bg-base-900 lg:block"
+>
+  <div class="flex h-full flex-col">
+    <!-- IDENTIFICADOR -->
+    <div class="shrink-0 border-b border-base-600/40 px-5 py-5">
+      <p class="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.3em] text-gold-500">
+        <span class="h-1.5 w-1.5 bg-gold-500"></span>
+        SRT / Command
+      </p>
+      <h2 class="mt-2 font-display text-xl font-semibold uppercase tracking-wider text-bone-100">
+        Centro de Mando
+      </h2>
+    </div>
+
+    <!-- NAVEGACIÓN (scroll interno solo si la pantalla es baja) -->
+    <nav class="thin-scroll min-h-0 flex-1 overflow-y-auto p-3" aria-label="Gestión">
+      <p class="mb-3 px-3 font-mono text-[10px] uppercase tracking-[0.25em] text-silver-300">
+        Gestión
+      </p>
+
+      {items.map((item) => (
+        <a
+          href={item.href}
+          aria-current={item.active ? 'page' : undefined}
+          class:list={[
+            'group mb-1 flex items-center gap-3 border-l-2 px-4 py-3',
+            item.active
+              ? 'border-gold-500 bg-gold-500/10'
+              : 'border-transparent hover:border-base-600 hover:bg-base-800',
+          ]}
+        >
+          <span class:list={['font-mono text-[11px]', item.tone]}>{item.code}</span>
+
+          <span
+            class:list={[
+              'font-display text-sm uppercase tracking-wider',
+              item.active ? 'text-bone-100' : 'text-silver-300 group-hover:text-bone-100',
+            ]}
+          >
+            {item.label}
+          </span>
+
+          {item.count > 0 && (
+            <span class="ml-auto flex h-5 min-w-5 items-center justify-center border border-blue-600/50 bg-blue-600/10 px-1 font-mono text-[10px] text-blue-600">
+              {item.count}
+            </span>
+          )}
+
+          {item.active && item.count === 0 && (
+            <span class="ml-auto text-gold-500" aria-hidden="true">→</span>
+          )}
+        </a>
+      ))}
+    </nav>
+
+    <!-- ESTADO DEL SISTEMA -->
+    <div class="shrink-0 border-t border-base-600/40 p-4">
+      <div class="mb-3 flex items-center justify-between px-1">
+        <span class="font-mono text-[10px] uppercase tracking-wider text-silver-300">Sistema</span>
+        <span class="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-silver-300">
+          <span class="h-1.5 w-1.5 bg-green-500"></span>
+          Online
+        </span>
+      </div>
+
+      <div class="barcode mb-3 h-4"></div>
+
+      <a
+        href="/"
+        class="flex items-center justify-between border border-base-600/60 px-4 py-3 hover:border-gold-500/50 hover:bg-base-800"
+      >
+        <span class="font-display text-xs uppercase tracking-wider text-silver-300">
+          Volver al sistema
+        </span>
+        <span class="font-mono text-xs text-gold-500" aria-hidden="true">←</span>
+      </a>
+    </div>
+  </div>
+</aside>
+
+<!-- MÓVIL: barra inferior -->
+<nav
+  class="fixed inset-x-0 bottom-0 z-40 grid h-14 grid-cols-5 border-t border-base-600/60 bg-base-900 lg:hidden"
+  aria-label="Navegación del panel"
+>
+  {items.map((item) => (
+    <a
+      href={item.href}
+      aria-current={item.active ? 'page' : undefined}
+      class:list={[
+        'relative flex flex-col items-center justify-center gap-0.5 border-t-2',
+        item.active
+          ? 'border-gold-500 bg-gold-500/10 text-gold-500'
+          : 'border-transparent text-silver-300',
+      ]}
+    >
+      <span class="font-mono text-[10px]">{item.code}</span>
+      <span class="max-w-full truncate px-1 font-display text-[11px] uppercase tracking-wide">
+        {item.label}
+      </span>
+
+      {item.count > 0 && (
+        <span class="absolute right-2 top-1.5 flex h-4 min-w-4 items-center justify-center bg-blue-600 px-1 font-mono text-[9px] text-bone-100">
+          {item.count}
+        </span>
+      )}
+    </a>
+  ))}
+</nav>

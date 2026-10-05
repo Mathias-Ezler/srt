@@ -1,0 +1,56 @@
+---
+import BaseLayout from '../layouts/Layout.astro';
+---
+
+<BaseLayout title="Solicitud pendiente | SRT">
+  <main class="min-h-screen flex items-center justify-center bg-zinc-950 px-6">
+    <section class="w-full max-w-lg text-center">
+
+      <div class="rounded-2xl border border-zinc-800 bg-zinc-900 p-8 shadow-2xl">
+
+        <div
+          class="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full border border-yellow-500/20 bg-yellow-500/10"
+        >
+          <span class="text-2xl">⏳</span>
+        </div>
+
+        <h1 class="text-3xl font-bold text-white">
+          Solicitud pendiente
+        </h1>
+
+        <p class="mt-4 leading-7 text-zinc-400">
+          Tu cuenta fue registrada correctamente, pero todavía
+          no fue aprobada por un responsable del SRT.
+        </p>
+
+        <p class="mt-3 text-sm text-zinc-500">
+          Un administrador deberá revisar tu solicitud y asignarte
+          un rango antes de que puedas acceder al sistema.
+        </p>
+
+        <div class="mt-8 rounded-xl border border-zinc-800 bg-zinc-950/60 p-4">
+          <p class="text-sm text-zinc-500">
+            Estado de cuenta
+          </p>
+
+          <p class="mt-1 font-semibold text-yellow-400">
+            PENDIENTE DE APROBACIÓN
+          </p>
+        </div>
+
+        <a
+          href="/"
+          class="mt-6 inline-block text-sm text-zinc-400 transition hover:text-white"
+        >
+          Volver al inicio
+        </a>
+
+      </div>
+
+      <p class="mt-6 text-xs text-zinc-600">
+        SRT · Sistema de Operaciones
+      </p>
+
+    </section>
+  </main>
+</BaseLayout>

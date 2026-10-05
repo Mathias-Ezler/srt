@@ -1,0 +1,75 @@
+---
+import { createSupabaseServerClient } from '../../lib/supabase-server';
+import MemberCard from './MemberCard.astro';
+
+const supabase = createSupabaseServerClient(Astro);
+
+const { data: members, error } = await supabase
+  .from('members')
+  .select(`
+    id,
+    full_name,
+    callsign,
+    photo_url,
+    rank_id,
+    ranks (
+      name,
+      level
+    )
+  `)
+  .order('created_at', { ascending: true });
+
+if (error) {
+  console.error('Error obteniendo miembros:', error);
+}
+---
+
+{error ? (
+  <div
+    class="border border-danger-500/40 bg-danger-500/10 p-6"
+  >
+    <p
+      class="font-mono text-xs uppercase tracking-wider text-danger-500"
+    >
+      Error cargando personal
+    </p>
+
+    <p class="mt-2 text-sm text-silver-300">
+      No se pudo obtener el registro de operadores.
+    </p>
+  </div>
+) : members && members.length > 0 ? (
+  <div
+    class="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4"
+  >
+    {members.map((member) => (
+      <MemberCard
+        id={member.id}
+        name={member.full_name ?? 'Sin nombre'}
+        plate={member.callsign ?? 'SIN PLACA'}
+        rank={member.ranks?.[0]?.name ?? 'Sin rango'}
+        photo={member.photo_url ?? '/images/default-operator.jpg'}
+      />
+    ))}
+  </div>
+) : (
+  <div
+    class="border border-base-600/40 bg-base-900 p-10 text-center"
+  >
+    <p
+      class="font-mono text-xs uppercase tracking-[0.2em] text-silver-300"
+    >
+      Personnel Registry
+    </p>
+
+    <h3
+      class="mt-2 font-display text-2xl uppercase tracking-wide text-bone-100"
+    >
+      Sin operadores registrados
+    </h3>
+
+    <p class="mt-2 text-sm text-silver-300">
+      No existen operadores registrados actualmente.
+    </p>
+  </div>
+)}

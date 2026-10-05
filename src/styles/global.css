@@ -1,0 +1,103 @@
+@import "tailwindcss";
+
+/* `static` hace que todas las variables existan siempre,
+   así se pueden usar con var(--color-...) en CSS propio */
+@theme static {
+  --color-base-950: #0b0c0d;
+  --color-base-900: #121416;
+  --color-base-800: #1b1e21;
+  --color-base-600: #3a3f44;
+
+  --color-coyote-500: #8a7260;
+  --color-coyote-300: #b59b83;
+
+  --color-gold-500: #e3ba19;
+
+  --color-blue-600: #134f9f;
+
+  --color-silver-300: #b8bcc0;
+  --color-bone-100: #ece8e1;
+
+  --color-danger-500: #c2410c;
+
+  --font-display: "Barlow Condensed", sans-serif;
+  --font-sans: "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+@layer components {
+  /* Cuadrícula sutil de fondo */
+  .tac-grid {
+    background-image:
+      linear-gradient(to right, rgb(255 255 255 / 0.025) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(255 255 255 / 0.025) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  /* Franja de peligro */
+  .hazard {
+    background: repeating-linear-gradient(
+      -45deg,
+      var(--color-gold-500) 0 8px,
+      var(--color-base-950) 8px 16px
+    );
+  }
+
+  /* Esquinas tipo mira. Tamaño ajustable: style="--b:8px" */
+  .brackets {
+    position: relative;
+  }
+  .brackets::before,
+  .brackets::after {
+    content: '';
+    position: absolute;
+    width: var(--b, 14px);
+    height: var(--b, 14px);
+    border: 2px solid var(--color-gold-500);
+    pointer-events: none;
+    z-index: 2;
+  }
+  .brackets::before {
+    top: -1px;
+    left: -1px;
+    border-right: 0;
+    border-bottom: 0;
+  }
+  .brackets::after {
+    right: -1px;
+    bottom: -1px;
+    border-left: 0;
+    border-top: 0;
+  }
+
+  /* Líneas de escaneo sobre fotos */
+  .scan {
+    background: repeating-linear-gradient(
+      to bottom,
+      rgb(0 0 0 / 0.18) 0 1px,
+      transparent 1px 3px
+    );
+    pointer-events: none;
+  }
+
+  /* Código de barras decorativo */
+  .barcode {
+    background: repeating-linear-gradient(
+      to right,
+      var(--color-base-600) 0 2px,
+      transparent 2px 4px,
+      var(--color-base-600) 4px 5px,
+      transparent 5px 9px,
+      var(--color-base-600) 9px 12px,
+      transparent 12px 14px
+    );
+    opacity: 0.55;
+  }
+
+  /* Scroll interno discreto */
+  .thin-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-base-600) transparent;
+    overscroll-behavior: contain;
+  }
+}

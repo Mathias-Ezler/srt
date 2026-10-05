@@ -1,0 +1,80 @@
+---
+import { getCurrentMember } from '../../lib/auth';
+
+const { member } = await getCurrentMember(Astro);
+
+const memberName = member?.full_name ?? 'Operador';
+const memberCallsign = member?.callsign ?? 'SIN PLACA';
+const memberRank = member?.rank?.name ?? 'Sin rango';
+const memberPhoto = member?.photo_url ?? '/images/default-operator.jpg';
+---
+
+<header class="fixed inset-x-0 top-0 z-50 h-20 border-b border-base-600/50 bg-base-900">
+  <!-- Franja de clasificación -->
+  <div class="hazard absolute inset-x-0 top-0 h-1"></div>
+
+  <div class="relative flex h-full items-center justify-between px-5 pt-1 lg:px-7">
+    <!-- USUARIO -->
+    <div class="flex min-w-0 items-center gap-3">
+      <div class="brackets h-12 w-12 shrink-0" style="--b: 8px">
+        <div class="h-full w-full overflow-hidden border border-base-600 bg-base-800">
+          <img
+            src={memberPhoto}
+            alt={`Fotografía de ${memberName}`}
+            class="h-full w-full object-cover grayscale-[.3]"
+            onerror="this.onerror=null;this.src='/images/default-operator.jpg'"
+          />
+        </div>
+      </div>
+
+      <div class="hidden min-w-0 sm:block">
+        <p class="truncate font-display text-base font-semibold uppercase tracking-wider text-bone-100">
+          {memberName}
+        </p>
+        <p class="mt-0.5 flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider">
+          <span class="text-gold-500">{memberRank}</span>
+          <span class="text-base-600">/</span>
+          <span class="text-silver-300">[{memberCallsign}]</span>
+        </p>
+      </div>
+    </div>
+
+    <!-- CENTRO -->
+    <div class="absolute left-1/2 hidden -translate-x-1/2 text-center md:block">
+      <p class="font-mono text-[10px] uppercase tracking-[0.4em] text-silver-300">
+        Special Response Team
+      </p>
+      <h1 class="mt-0.5 font-display text-xl font-bold uppercase tracking-[0.18em] text-bone-100">
+        Centro de Mando
+      </h1>
+    </div>
+
+    <!-- HORA + INSIGNIA -->
+    <div class="flex items-center gap-4">
+      <div class="hidden border-l-2 border-base-600 pl-3 text-right lg:block">
+        <p class="font-mono text-[10px] uppercase tracking-[0.25em] text-silver-300">Hora local</p>
+        <time id="hdr-clock" class="font-mono text-sm tabular-nums text-gold-500">--:--:--</time>
+      </div>
+
+      <img src="/img/srt-patch.png" alt="Parche del SRT" class="h-12 w-auto" />
+    </div>
+  </div>
+</header>
+
+<script>
+  const clock = document.querySelector<HTMLElement>('#hdr-clock');
+
+  if (clock) {
+    const fmt = new Intl.DateTimeFormat('es-PY', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+    const tick = () => {
+      clock.textContent = fmt.format(new Date());
+    };
+    tick();
+    setInterval(tick, 1000);
+  }
+</script>
