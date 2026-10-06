@@ -15,13 +15,15 @@ const supabase = createApiClient(Astro.request, Astro.cookies);
    PERMISOS
    ============================================================ */
 
+   const rankId = member.rank?.id ?? null;
+
 async function checkLeader(): Promise<boolean> {
-  if (!member.rank?.id) return false;
+  if (!rankId) return false;
 
   const { data: perm } = await supabase
     .from('rank_permissions')
     .select('permission_key')
-    .eq('rank_id', member.rank.id)
+    .eq('rank_id', rankId)
     .eq('permission_key', 'admin.access')
     .maybeSingle();
 
@@ -34,9 +36,10 @@ const isLeader = await checkLeader();
    DESPLIEGUES
    ============================================================ */
 
-const { data: deployments, error } = await supabase
+const { data, error } = await supabase
   .from('deployments')
-  .select(`
+  .select(
+    `
     id,
     code,
     title,
@@ -44,9 +47,8 @@ const { data: deployments, error } = await supabase
     location,
     risk_level,
     status,
+    report_status,
     created_by,
-    started_at,
-    ended_at,
     created_at,
     deployment_members (
       member_id,
@@ -58,12 +60,15 @@ const { data: deployments, error } = await supabase
         rank_id
       )
     )
-  `)
+  `
+  )
   .order('created_at', { ascending: false });
 
 if (error) {
   console.error('Error obteniendo despliegues:', error);
 }
+
+const deployments: any[] = data ?? [];
 
 /* ============================================================
    HELPERS
@@ -82,216 +87,259 @@ const formatDate = (value: string | null) => {
     .toUpperCase();
 };
 
-const formatTime = (value: string | null) => {
-  if (!value) return '—';
-
-  return new Intl.DateTimeFormat('es-PY', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(new Date(value));
-};
-
-const formatDuration = (
-  started: string | null,
-  ended: string | null,
-) => {
-  if (!started || !ended) return null;
-
-  const diff =
-    new Date(ended).getTime() -
-    new Date(started).getTime();
-
-  if (diff < 0) return null;
-
-  const minutes = Math.floor(diff / 60000);
-
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-
-  if (hours > 0) {
-    return `${hours}h ${remainingMinutes}m`;
+const statusLabel = (status: string | null) => {
+  if (status === 'reviewed') {
+    return 'Revisado';
   }
 
-  return `${minutes} min`;
+  return 'En espera';
 };
 
-const statusLabel = (status: string) => {
-  switch (status) {
-    case 'draft':
-      return 'Borrador';
-
-    case 'active':
-      return 'Activo';
-
-    case 'completed':
-      return 'Finalizado';
-
-    case 'cancelled':
-      return 'Cancelado';
-
-    default:
-      return status;
+const statusClass = (status: string | null) => {
+  if (status === 'reviewed') {
+    return 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400';
   }
+
+  return 'border-orange-500/40 bg-orange-500/10 text-orange-400';
 };
 
-const statusClass = (status: string) => {
-  switch (status) {
-    case 'active':
-      return 'border-gold-500/50 bg-gold-500/10 text-gold-500';
+/* Barra lateral según estado de revisión */
 
-    case 'completed':
-      return 'border-silver-300/30 bg-silver-300/5 text-silver-300';
-
-    case 'cancelled':
-      return 'border-danger-500/40 bg-danger-500/10 text-danger-500';
-
-    case 'draft':
-    default:
-      return 'border-base-600 bg-base-800 text-base-600';
+const accentClass = (status: string | null) => {
+  if (status === 'reviewed') {
+    return 'bg-emerald-500';
   }
+
+  return 'bg-orange-500';
 };
 
-const riskLabel = (risk: string | null) => {
-  if (!risk) return null;
+const riskLabel = (risk: string | null) =>
+  risk
+    ? (
+        {
+          low: 'Bajo',
+          medium: 'Medio',
+          high: 'Alto',
+          critical: 'Crítico',
+        } as Record<string, string>
+      )[risk] ?? risk
+    : null;
 
-  switch (risk) {
-    case 'low':
-      return 'BAJO';
+const riskLevel = (risk: string | null) =>
+  (
+    {
+      low: 1,
+      medium: 2,
+      high: 3,
+      critical: 4,
+    } as Record<string, number>
+  )[risk ?? ''] ?? 0;
 
-    case 'medium':
-      return 'MEDIO';
+const riskClass = (risk: string | null) =>
+  (
+    {
+      low: 'text-blue-600',
+      medium: 'text-silver-300',
+      high: 'text-gold-500',
+      critical: 'text-danger-500',
+    } as Record<string, string>
+  )[risk ?? ''] ?? 'text-base-600';
 
-    case 'high':
-      return 'ALTO';
+/* ============================================================
+   TIPOS DE DESPLIEGUE
+   ============================================================ */
 
-    case 'critical':
-      return 'CRÍTICO';
+const normalizeType = (type: string | null) =>
+  type?.trim().toLowerCase() ?? '';
 
-    default:
-      return risk.toUpperCase();
-  }
+const knownTypes = [
+  'atrincheramiento vehicular',
+  'emboscada',
+  'atrincheramiento con rehenes',
+  'secuestro',
+];
+
+const isOtherType = (type: string | null) => {
+  const normalized = normalizeType(type);
+
+  return !knownTypes.includes(normalized);
 };
 
-const riskClass = (risk: string | null) => {
-  switch (risk) {
-    case 'critical':
-      return 'text-danger-500';
+const filters = [
+  {
+    key: '',
+    label: 'Todos',
+  },
+  {
+    key: 'atrincheramiento vehicular',
+    label: 'Atrincheramiento Vehicular',
+  },
+  {
+    key: 'atrincheramiento con rehenes',
+    label: 'Atrincheramiento con Rehenes',
+  },
+  {
+    key: 'emboscadas',
+    label: 'Emboscada',
+  },
+  {
+    key: 'secuestro',
+    label: 'Secuestros',
+  },
+  {
+    key: '__other__',
+    label: 'Otros',
+  },
+].map((filter) => ({
+  ...filter,
 
-    case 'high':
-      return 'text-gold-500';
+  count:
+    filter.key === ''
+      ? deployments.length
+      : filter.key === '__other__'
+        ? deployments.filter((d) =>
+            isOtherType(d.type)
+          ).length
+        : deployments.filter(
+            (d) =>
+              normalizeType(d.type) ===
+              normalizeType(filter.key)
+          ).length,
+}));
 
-    case 'medium':
-      return 'text-silver-300';
+/* Misma plantilla de columnas en cabecera y filas */
 
-    default:
-      return 'text-base-600';
-  }
-};
+const cols =
+  'lg:grid-cols-[96px_minmax(0,1fr)_190px_100px_104px]';
 ---
 
 <OperatorLayout
   title="Despliegues"
-  active="operaciones"
+  active="despliegues"
   isLeader={isLeader}
 >
-  <div class="mx-auto max-w-6xl">
+  <div class="mx-auto flex h-full min-h-0 max-w-6xl flex-col gap-4">
 
     <!-- ======================================================
          CABECERA
-    ======================================================= -->
-
-    <section class="mb-6">
-
-      <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-
-        <div>
-          <p
-            class="font-mono text-[10px] uppercase tracking-[0.25em] text-gold-500"
-          >
-            Registro operacional
-          </p>
-
-          <h2
-            class="mt-1 font-display text-3xl font-bold uppercase tracking-wide"
-          >
-            Despliegues
-          </h2>
-
-          <p
-            class="mt-2 max-w-xl font-mono text-[10px] uppercase tracking-wider text-silver-300"
-          >
-            Historial de intervenciones y operaciones SRT
-          </p>
-        </div>
-
-        <a
-          href="/despliegues/nuevo"
-          class="group brackets inline-flex shrink-0 items-center justify-center border border-gold-500/60 bg-gold-500/10 px-5 py-3 font-mono text-[10px] uppercase tracking-[0.2em] text-gold-500 transition hover:bg-gold-500 hover:text-base-950"
-        >
-          <span class="mr-3 text-base">+</span>
-          Nuevo despliegue
-        </a>
-
-      </div>
-
-      <div class="mt-5 h-px bg-base-600/50"></div>
-
-    </section>
-
-
-    <!-- ======================================================
-         FILTROS
-    ======================================================= -->
+         ====================================================== -->
 
     <section
-      class="mb-5 border border-base-600/60 bg-base-900"
+      class="flex shrink-0 flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"
     >
-
-      <div
-        class="flex flex-col gap-3 p-3 sm:flex-row"
-      >
-
-        <div class="relative flex-1">
-
-          <span
-            class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-[10px] text-base-600"
-          >
-            /
-          </span>
-
-          <input
-            id="deployment-search"
-            type="search"
-            placeholder="Buscar por código, título o ubicación..."
-            class="w-full border border-base-600 bg-base-950 py-2.5 pl-7 pr-3 font-mono text-xs text-bone-100 outline-none placeholder:text-base-600 focus:border-gold-500/60"
-          />
-
-        </div>
-
-        <select
-          id="deployment-status"
-          class="border border-base-600 bg-base-950 px-3 py-2.5 font-mono text-xs uppercase tracking-wider text-silver-300 outline-none focus:border-gold-500/60"
+      <div>
+        <p
+          class="font-mono text-[10px] uppercase tracking-[0.25em] text-gold-500"
         >
-          <option value="">Todos los estados</option>
-          <option value="draft">Borradores</option>
-          <option value="active">Activos</option>
-          <option value="completed">Finalizados</option>
-          <option value="cancelled">Cancelados</option>
-        </select>
+          Registro operacional
+        </p>
 
+        <h2
+          class="mt-1 font-display text-3xl font-bold uppercase leading-none tracking-wide"
+        >
+          Despliegues
+        </h2>
+
+        <p
+          class="mt-2 font-mono text-[10px] uppercase tracking-wider text-silver-300"
+        >
+          Historial de intervenciones y operaciones SRT
+        </p>
       </div>
 
+      <a
+        href="/despliegues/nuevo"
+        class="flex shrink-0 items-center justify-center gap-3 bg-gold-500 px-5 py-3 text-base-950 hover:bg-bone-100"
+      >
+        <span
+          class="font-mono text-base font-bold leading-none"
+        >
+          +
+        </span>
+
+        <span
+          class="font-display text-sm font-bold uppercase tracking-wider"
+        >
+          Nuevo despliegue
+        </span>
+      </a>
     </section>
 
+    <!-- ======================================================
+         BÚSQUEDA + FILTROS
+         ====================================================== -->
+
+    <section
+      class="flex shrink-0 flex-col gap-3 border border-base-600/60 bg-base-900 p-3 lg:flex-row lg:items-center"
+    >
+
+      <!-- BUSCADOR -->
+
+      <div class="relative lg:w-80">
+        <svg
+          viewBox="0 0 24 24"
+          class="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-base-600"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          aria-hidden="true"
+        >
+          <circle
+            cx="11"
+            cy="11"
+            r="7"
+          ></circle>
+
+          <path d="m20 20-3.5-3.5"></path>
+        </svg>
+
+        <input
+          id="deployment-search"
+          type="search"
+          placeholder="Buscar código, título o lugar"
+          aria-label="Buscar despliegues"
+          class="w-full border border-base-600 bg-base-950 py-2.5 pl-9 pr-9 font-mono text-xs text-bone-100 outline-none placeholder:text-base-600 focus:border-gold-500/60"
+        />
+
+        <kbd
+          class="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 border border-base-600 px-1.5 py-px font-mono text-[9px] text-base-600 sm:block"
+        >
+          /
+        </kbd>
+      </div>
+
+      <!-- FILTROS POR TIPO -->
+
+      <div
+        class="flex flex-wrap gap-2"
+        role="group"
+        aria-label="Filtrar por tipo de despliegue"
+      >
+        {filters.map((f, i) => (
+          <button
+            type="button"
+            data-filter={f.key}
+            aria-pressed={i === 0 ? 'true' : 'false'}
+            class="flex items-center gap-2 border border-base-600 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.15em] text-silver-300 hover:border-gold-500/50 hover:text-bone-100 aria-pressed:border-gold-500 aria-pressed:bg-gold-500/10 aria-pressed:text-gold-500"
+          >
+            {f.label}
+
+            <span class="tabular-nums opacity-70">
+              {f.count}
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
 
     <!-- ======================================================
          ERROR
-    ======================================================= -->
+         ====================================================== -->
 
     {error && (
       <div
-        class="mb-5 border border-danger-500/40 bg-danger-500/10 p-4"
+        class="shrink-0 border border-danger-500/40 bg-danger-500/10 p-4"
       >
         <p
           class="font-mono text-[10px] uppercase tracking-wider text-danger-500"
@@ -299,52 +347,52 @@ const riskClass = (risk: string | null) => {
           Error al cargar los despliegues
         </p>
 
-        <p class="mt-1 font-mono text-xs text-silver-300">
+        <p
+          class="mt-1 font-mono text-xs text-silver-300"
+        >
           {error.message}
         </p>
       </div>
     )}
 
-
     <!-- ======================================================
-         CONTADOR
-    ======================================================= -->
+         REGISTRO
+         ====================================================== -->
 
-    <div class="mb-3 flex items-center justify-between">
-
-      <p
-        class="font-mono text-[10px] uppercase tracking-[0.25em] text-silver-300"
-      >
-        Registro
-      </p>
-
-      <p
-        id="deployment-count"
-        class="font-mono text-[10px] uppercase tracking-[0.2em] text-base-600"
-      >
-        {deployments?.length ?? 0} registros
-      </p>
-
-    </div>
-
-
-    <!-- ======================================================
-         LISTADO
-    ======================================================= -->
-
-    <div
-      id="deployment-list"
-      class="space-y-3"
+    <section
+      class="brackets flex min-h-[240px] flex-1 flex-col border border-base-600/60 bg-base-900"
     >
 
-      {deployments && deployments.length > 0 ? (
+      <!-- CABECERA DE COLUMNAS -->
 
-        deployments.map((deployment) => {
+      <div
+        class={`hidden shrink-0 gap-4 border-b border-base-600/50 bg-base-950/60 py-2.5 pl-5 pr-4 font-mono text-[9px] uppercase tracking-[0.2em] text-silver-300 lg:grid ${cols}`}
+      >
+        <span>Código</span>
 
+        <span>Despliegue</span>
+
+        <span>Alpha</span>
+
+        <span>Riesgo</span>
+
+        <span class="text-right">
+          Estado
+        </span>
+      </div>
+
+      <!-- FILAS -->
+
+      <div
+        id="deployment-list"
+        class="thin-scroll min-h-0 flex-1 overflow-y-auto"
+      >
+
+        {deployments.map((d) => {
           const alpha =
-            deployment.deployment_members?.find(
-              (participant) =>
-                participant.role === 'alpha'
+            d.deployment_members?.find(
+              (p: any) =>
+                p.role === 'alpha'
             );
 
           const alphaMember =
@@ -360,275 +408,302 @@ const riskClass = (risk: string | null) => {
             alphaMember?.callsign ??
             '---';
 
-          const duration = formatDuration(
-            deployment.started_at,
-            deployment.ended_at
-          );
+          const level =
+            riskLevel(
+              d.risk_level
+            );
 
           return (
             <a
-              href={`/despliegues/${deployment.id}`}
-              class="deployment-card brackets group block border border-base-600/60 bg-base-900 transition hover:border-gold-500/50 hover:bg-base-800"
-              data-status={deployment.status}
-              data-search={`${deployment.code} ${deployment.title} ${deployment.location}`.toLowerCase()}
+              href={`/despliegues/${d.id}`}
+              class={`deployment-row group relative flex flex-col gap-1.5 border-b border-base-600/40 py-3 pl-5 pr-4 hover:bg-base-800 lg:grid lg:items-center lg:gap-4 ${cols}`}
+              data-type={normalizeType(d.type)}
+              data-search={`${d.code} ${d.title} ${d.location} ${d.type} ${alphaName} ${alphaCallsign}`.toLowerCase()}
             >
 
-              <div class="p-4 sm:p-5">
+              <!-- Barra lateral -->
 
-                <!-- CABECERA DE TARJETA -->
+              <span
+                class={`absolute inset-y-0 left-0 w-1 ${accentClass(d.report_status)}`}
+              ></span>
 
-                <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <!-- Código + fecha -->
 
-                  <div class="min-w-0">
-
-                    <div class="flex flex-wrap items-center gap-2">
-
-                      <span
-                        class="font-mono text-[10px] tracking-[0.2em] text-gold-500"
-                      >
-                        {deployment.code}
-                      </span>
-
-                      <span
-                        class={`border px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider ${statusClass(deployment.status)}`}
-                      >
-                        {statusLabel(deployment.status)}
-                      </span>
-
-                    </div>
-
-                    <h3
-                      class="mt-2 truncate font-display text-xl font-bold uppercase tracking-wide text-bone-100 group-hover:text-gold-500"
-                    >
-                      {deployment.title}
-                    </h3>
-
-                  </div>
-
-                  <span
-                    class="shrink-0 font-mono text-[10px] uppercase tracking-wider text-silver-300"
-                  >
-                    {formatDate(deployment.created_at)}
-                  </span>
-
-                </div>
-
-
-                <!-- INFORMACIÓN -->
-
-                <div
-                  class="mt-5 grid gap-px border border-base-600/40 bg-base-600/40 sm:grid-cols-2 lg:grid-cols-4"
+              <div
+                class="flex items-center justify-between gap-3 lg:block"
+              >
+                <p
+                  class="font-mono text-[11px] tracking-[0.15em] text-gold-500"
                 >
+                  {d.code}
+                </p>
 
-                  <div class="bg-base-950/60 px-3 py-3">
-
-                    <p
-                      class="font-mono text-[9px] uppercase tracking-[0.2em] text-base-600"
-                    >
-                      Ubicación
-                    </p>
-
-                    <p
-                      class="mt-1 truncate font-display text-sm uppercase tracking-wide text-silver-300"
-                    >
-                      {deployment.location}
-                    </p>
-
-                  </div>
-
-
-                  <div class="bg-base-950/60 px-3 py-3">
-
-                    <p
-                      class="font-mono text-[9px] uppercase tracking-[0.2em] text-base-600"
-                    >
-                      Tipo
-                    </p>
-
-                    <p
-                      class="mt-1 truncate font-display text-sm uppercase tracking-wide text-silver-300"
-                    >
-                      {deployment.type}
-                    </p>
-
-                  </div>
-
-
-                  <div class="bg-base-950/60 px-3 py-3">
-
-                    <p
-                      class="font-mono text-[9px] uppercase tracking-[0.2em] text-base-600"
-                    >
-                      Alpha
-                    </p>
-
-                    <p
-                      class="mt-1 truncate font-display text-sm uppercase tracking-wide text-silver-300"
-                    >
-                      <span class="text-gold-500">
-                        {alphaCallsign}
-                      </span>
-
-                      <span class="text-silver-300">
-                        · {alphaName}
-                      </span>
-                    </p>
-
-                  </div>
-
-
-                  <div class="bg-base-950/60 px-3 py-3">
-
-                    <p
-                      class="font-mono text-[9px] uppercase tracking-[0.2em] text-base-600"
-                    >
-                      {duration ? 'Duración' : 'Inicio'}
-                    </p>
-
-                    <p
-                      class="mt-1 font-mono text-xs tabular-nums text-silver-300"
-                    >
-                      {duration
-                        ? duration
-                        : deployment.started_at
-                          ? formatTime(deployment.started_at)
-                          : 'Sin iniciar'}
-                    </p>
-
-                  </div>
-
-                </div>
-
-
-                <!-- FOOTER -->
-
-                <div
-                  class="mt-4 flex items-center justify-between border-t border-base-600/40 pt-3"
+                <p
+                  class="font-mono text-[9px] uppercase tracking-wider text-silver-300 lg:mt-0.5"
                 >
-
-                  <div class="flex items-center gap-3">
-
-                    {deployment.risk_level && (
-                      <span
-                        class={`font-mono text-[9px] uppercase tracking-[0.18em] ${riskClass(deployment.risk_level)}`}
-                      >
-                        Riesgo {riskLabel(deployment.risk_level)}
-                      </span>
-                    )}
-
-                    {deployment.started_at && (
-                      <span
-                        class="font-mono text-[9px] uppercase tracking-wider text-base-600"
-                      >
-                        Inicio {formatTime(deployment.started_at)}
-                      </span>
-                    )}
-
-                  </div>
-
-                  <span
-                    class="font-mono text-[10px] text-gold-500 opacity-0 transition group-hover:opacity-100"
-                  >
-                    Abrir →
-                  </span>
-
-                </div>
-
+                  {formatDate(d.created_at)}
+                </p>
               </div>
 
+              <!-- Título + tipo/lugar -->
+
+              <div class="min-w-0">
+                <p
+                  class="truncate font-display text-base font-bold uppercase tracking-wide text-bone-100 group-hover:text-gold-500"
+                >
+                  {d.title}
+                </p>
+
+                <p
+                  class="mt-0.5 truncate font-mono text-[10px] uppercase tracking-wider text-silver-300"
+                >
+                  {d.type}
+
+                  <span class="text-base-600">
+                    //
+                  </span>
+
+                  {d.location}
+                </p>
+              </div>
+
+              <!-- Alpha -->
+
+              <p
+                class="truncate font-mono text-[10px] uppercase tracking-wider text-silver-300"
+              >
+                <span class="text-base-600 lg:hidden">
+                  Alpha
+                </span>
+
+                <span class="text-gold-500">
+                  {alphaCallsign}
+                </span>
+
+                · {alphaName}
+              </p>
+
+              <!-- Riesgo -->
+
+              <div
+                class={`flex items-center gap-2 ${riskClass(d.risk_level)}`}
+              >
+                <span
+                  class="flex items-end gap-0.5"
+                  aria-hidden="true"
+                >
+                  {[1, 2, 3, 4].map((n) => (
+                    <span
+                      class={`w-1.5 ${
+                        n <= level
+                          ? 'bg-current'
+                          : 'bg-base-600/60'
+                      }`}
+                      style={`height:${6 + n * 2}px`}
+                    ></span>
+                  ))}
+                </span>
+
+                <span
+                  class="font-mono text-[10px] uppercase tracking-wider"
+                >
+                  {riskLabel(d.risk_level) ?? '—'}
+                </span>
+              </div>
+
+              <!-- ESTADO DE REVISIÓN -->
+
+              <div class="lg:text-right">
+                <span
+                  class={`inline-block border px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider ${statusClass(d.report_status)}`}
+                >
+                  {statusLabel(d.report_status)}
+                </span>
+              </div>
             </a>
           );
-        })
+        })}
 
-      ) : (
+        <!-- ==================================================
+             SIN REGISTROS
+             ================================================== -->
+
+        {deployments.length === 0 && !error && (
+          <div
+            class="flex h-full min-h-[240px] items-center justify-center p-8 text-center"
+          >
+            <div>
+              <p
+                class="font-mono text-[10px] uppercase tracking-[0.25em] text-base-600"
+              >
+                Sin registros
+              </p>
+
+              <h3
+                class="mt-2 font-display text-2xl font-bold uppercase tracking-wide text-silver-300"
+              >
+                No hay despliegues registrados
+              </h3>
+
+              <a
+                href="/despliegues/nuevo"
+                class="mt-5 inline-flex border border-gold-500/60 bg-gold-500/10 px-5 py-3 font-mono text-[10px] uppercase tracking-[0.2em] text-gold-500 hover:bg-gold-500 hover:text-base-950"
+              >
+                + Crear primer despliegue
+              </a>
+            </div>
+          </div>
+        )}
+
+        <!-- ==================================================
+             SIN RESULTADOS
+             ================================================== -->
 
         <div
-          class="brackets border border-base-600/60 bg-base-900 px-6 py-16 text-center"
+          id="no-results"
+          hidden
+          class="flex min-h-[200px] items-center justify-center p-8 text-center"
         >
+          <div>
+            <p
+              class="font-display text-lg font-bold uppercase text-silver-300"
+            >
+              Sin resultados
+            </p>
 
-          <p
-            class="font-mono text-[10px] uppercase tracking-[0.25em] text-base-600"
-          >
-            Sin registros
-          </p>
-
-          <h3
-            class="mt-2 font-display text-2xl font-bold uppercase tracking-wide text-silver-300"
-          >
-            No hay despliegues registrados
-          </h3>
-
-          <p
-            class="mx-auto mt-2 max-w-md font-mono text-[10px] uppercase tracking-wider text-base-600"
-          >
-            Los despliegues que registres aparecerán aquí.
-          </p>
-
-          <a
-            href="/despliegues/nuevo"
-            class="mt-6 inline-flex border border-gold-500/60 bg-gold-500/10 px-5 py-3 font-mono text-[10px] uppercase tracking-[0.2em] text-gold-500 hover:bg-gold-500 hover:text-base-950"
-          >
-            + Crear primer despliegue
-          </a>
-
+            <p
+              class="mt-1 font-mono text-[10px] uppercase tracking-wider text-base-600"
+            >
+              Prueba con otra búsqueda o quita los filtros.
+            </p>
+          </div>
         </div>
+      </div>
 
-      )}
+      <!-- ==================================================
+           PIE
+           ================================================== -->
 
-    </div>
+      <div
+        class="flex shrink-0 items-center justify-between border-t border-base-600/50 px-5 py-2"
+      >
+        <span
+          class="font-mono text-[10px] uppercase tracking-[0.2em] text-silver-300"
+        >
+          Registro
+        </span>
 
+        <span
+          id="deployment-count"
+          class="font-mono text-[10px] uppercase tracking-[0.2em] tabular-nums text-silver-300"
+        >
+          {deployments.length}
+
+          {deployments.length === 1
+            ? 'registro'
+            : 'registros'}
+        </span>
+      </div>
+    </section>
   </div>
 </OperatorLayout>
 
+<style>
+  .deployment-row[data-hidden='true'] {
+    display: none;
+  }
+</style>
 
 <script>
-  const searchInput =
-    document.querySelector('#deployment-search');
+  const search =
+    document.querySelector<HTMLInputElement>(
+      '#deployment-search'
+    );
 
-  const statusSelect =
-    document.querySelector('#deployment-status');
+  const filterButtons =
+    Array.from(
+      document.querySelectorAll<HTMLButtonElement>(
+        '[data-filter]'
+      )
+    );
 
-  const cards = Array.from(
-    document.querySelectorAll('.deployment-card')
-  );
+  const rows =
+    Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '.deployment-row'
+      )
+    );
 
   const count =
-    document.querySelector('#deployment-count');
+    document.querySelector<HTMLElement>(
+      '#deployment-count'
+    );
 
-  function filterDeployments() {
-    const search =
-      searchInput?.value
-        ?.trim()
+  const noResults =
+    document.querySelector<HTMLElement>(
+      '#no-results'
+    );
+
+  let selectedType = '';
+
+  const knownTypes = [
+    'atrincheramiento vehicular',
+    'emboscada',
+    'atrincheramiento con rehenes',
+    'secuestro',
+  ];
+
+  function normalizeType(value: string) {
+    return value
+      .trim()
+      .toLowerCase();
+  }
+
+  function applyFilters() {
+    const query =
+      search?.value
+        .trim()
         .toLowerCase() ?? '';
-
-    const status =
-      statusSelect?.value ?? '';
 
     let visible = 0;
 
-    cards.forEach((card) => {
-      const cardSearch =
-        card.getAttribute('data-search') ?? '';
-
-      const cardStatus =
-        card.getAttribute('data-status') ?? '';
+    rows.forEach((row) => {
+      const rowType =
+        normalizeType(
+          row.dataset.type ?? ''
+        );
 
       const matchesSearch =
-        !search ||
-        cardSearch.includes(search);
+        !query ||
+        (
+          row.dataset.search ?? ''
+        ).includes(query);
 
-      const matchesStatus =
-        !status ||
-        cardStatus === status;
+      let matchesType = true;
+
+      if (selectedType) {
+        if (
+          selectedType === '__other__'
+        ) {
+          matchesType =
+            !knownTypes.includes(
+              rowType
+            );
+        } else {
+          matchesType =
+            rowType ===
+            normalizeType(
+              selectedType
+            );
+        }
+      }
 
       const show =
         matchesSearch &&
-        matchesStatus;
+        matchesType;
 
-      card.classList.toggle(
-        'hidden',
-        !show
-      );
+      row.dataset.hidden =
+        show ? 'false' : 'true';
 
       if (show) {
         visible++;
@@ -637,17 +712,89 @@ const riskClass = (risk: string | null) => {
 
     if (count) {
       count.textContent =
-        `${visible} ${visible === 1 ? 'registro' : 'registros'}`;
+        visible === rows.length
+          ? `${visible} ${
+              visible === 1
+                ? 'registro'
+                : 'registros'
+            }`
+          : `${visible} de ${rows.length} registros`;
+    }
+
+    if (noResults) {
+      noResults.hidden = !(
+        rows.length > 0 &&
+        visible === 0
+      );
     }
   }
 
-  searchInput?.addEventListener(
+  filterButtons.forEach((button) => {
+    button.addEventListener(
+      'click',
+      () => {
+        selectedType =
+          button.dataset.filter ?? '';
+
+        filterButtons.forEach(
+          (b) => {
+            b.setAttribute(
+              'aria-pressed',
+              String(
+                b === button
+              )
+            );
+          }
+        );
+
+        applyFilters();
+      }
+    );
+  });
+
+  search?.addEventListener(
     'input',
-    filterDeployments
+    applyFilters
   );
 
-  statusSelect?.addEventListener(
-    'change',
-    filterDeployments
+  /* ========================================================
+     ATAJOS
+     ======================================================== */
+
+  document.addEventListener(
+    'keydown',
+    (event) => {
+      const target =
+        event.target as HTMLElement | null;
+
+      const typing =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement;
+
+      /* "/" → enfocar búsqueda */
+
+      if (
+        event.key === '/' &&
+        !typing
+      ) {
+        event.preventDefault();
+
+        search?.focus();
+      }
+
+      /* ESC → limpiar búsqueda */
+
+      if (
+        event.key === 'Escape' &&
+        target === search &&
+        search
+      ) {
+        search.value = '';
+
+        applyFilters();
+
+        search.blur();
+      }
+    }
   );
 </script>

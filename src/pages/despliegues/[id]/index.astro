@@ -3,28 +3,28 @@ import OperatorLayout from '../../../layouts/OperatorLayout.astro';
 import { getCurrentMember } from '../../../lib/auth';
 import { createApiClient } from '../../../lib/supabase-api';
 
-const { member } = await getCurrentMember(Astro);
-
-if (!member) {
-  return Astro.redirect('/login');
-}
-
-const id = Astro.params.id;
+const { id } = Astro.params;
 
 if (!id) {
   return Astro.redirect('/despliegues');
 }
 
-const supabase = createApiClient(
-  Astro.request,
-  Astro.cookies
-);
+const { member, permissions } =
+  await getCurrentMember(Astro);
 
-/*
- * ============================================================
- * DESPLIEGUE
- * ============================================================
- */
+if (!member) {
+  return Astro.redirect('/login');
+}
+
+const supabase = createApiClient(Astro.request, Astro.cookies);
+
+const isLeader =
+  permissions.includes('admin.access');
+
+
+// =====================================================
+// DESPLIEGUE
+// =====================================================
 
 const {
   data: deployment,
@@ -38,12 +38,14 @@ const {
     type,
     location,
     status,
+    report_status,
     description,
-    started_at,
-    ended_at,
     created_at,
     updated_at,
     created_by,
+    reviewed_by,
+    reviewed_at,
+
     members:created_by (
       id,
       full_name,
@@ -55,6 +57,7 @@ const {
   .eq('id', id)
   .single();
 
+
 if (deploymentError || !deployment) {
   console.error(
     'DEPLOYMENT DETAIL ERROR:',
@@ -64,17 +67,13 @@ if (deploymentError || !deployment) {
   return Astro.redirect('/despliegues');
 }
 
-/*
- * A partir de este punto TypeScript sabe que
- * currentDeployment existe.
- */
+
 const currentDeployment = deployment;
 
-/*
- * ============================================================
- * PARTICIPANTES
- * ============================================================
- */
+
+// =====================================================
+// PARTICIPANTES
+// =====================================================
 
 const {
   data: participants,
@@ -83,8 +82,8 @@ const {
   .from('deployment_members')
   .select(`
     id,
-    member_id,
     role,
+    member_id,
     members (
       id,
       full_name,
@@ -93,10 +92,11 @@ const {
       rank_id
     )
   `)
-  .eq('deployment_id', id)
+  .eq('deployment_id', currentDeployment.id)
   .order('role', {
     ascending: true,
   });
+
 
 if (participantsError) {
   console.error(
@@ -105,11 +105,10 @@ if (participantsError) {
   );
 }
 
-/*
- * ============================================================
- * SOSPECHOSOS
- * ============================================================
- */
+
+// =====================================================
+// SOSPECHOSOS
+// =====================================================
 
 const {
   data: suspects,
@@ -118,15 +117,17 @@ const {
   .from('deployment_suspects')
   .select(`
     id,
-    name,
     identification,
     confiscated_items,
+    status,
+    notes,
     created_at
   `)
-  .eq('deployment_id', id)
+  .eq('deployment_id', currentDeployment.id)
   .order('id', {
     ascending: true,
   });
+
 
 if (suspectsError) {
   console.error(
@@ -135,11 +136,10 @@ if (suspectsError) {
   );
 }
 
-/*
- * ============================================================
- * VEHÍCULOS
- * ============================================================
- */
+
+// =====================================================
+// VEHÍCULOS
+// =====================================================
 
 const {
   data: vehicles,
@@ -151,10 +151,11 @@ const {
     description,
     created_at
   `)
-  .eq('deployment_id', id)
+  .eq('deployment_id', currentDeployment.id)
   .order('id', {
     ascending: true,
   });
+
 
 if (vehiclesError) {
   console.error(
@@ -163,11 +164,10 @@ if (vehiclesError) {
   );
 }
 
-/*
- * ============================================================
- * EQUIPAMIENTO
- * ============================================================
- */
+
+// =====================================================
+// EQUIPAMIENTO
+// =====================================================
 
 const {
   data: equipment,
@@ -179,10 +179,11 @@ const {
     description,
     created_at
   `)
-  .eq('deployment_id', id)
+  .eq('deployment_id', currentDeployment.id)
   .order('id', {
     ascending: true,
   });
+
 
 if (equipmentError) {
   console.error(
@@ -191,11 +192,10 @@ if (equipmentError) {
   );
 }
 
-/*
- * ============================================================
- * GRABACIONES
- * ============================================================
- */
+
+// =====================================================
+// GRABACIONES
+// =====================================================
 
 const {
   data: recordings,
@@ -207,10 +207,11 @@ const {
     url,
     created_at
   `)
-  .eq('deployment_id', id)
+  .eq('deployment_id', currentDeployment.id)
   .order('id', {
     ascending: true,
   });
+
 
 if (recordingsError) {
   console.error(
@@ -219,160 +220,164 @@ if (recordingsError) {
   );
 }
 
-/*
- * ============================================================
- * HELPERS
- * ============================================================
- */
 
-const statusLabels: Record<
-  string,
-  string
-> = {
-  draft: 'BORRADOR',
-  active: 'ACTIVO',
-  completed: 'COMPLETADO',
-  cancelled: 'CANCELADO',
-};
+// =====================================================
+// REVISOR
+// =====================================================
 
-const statusClasses: Record<
-  string,
-  string
-> = {
-  draft:
-    'border-gold-500/30 bg-gold-500/10 text-gold-400',
+let reviewer: {
+  full_name: string | null;
+  callsign: string | null;
+} | null = null;
 
-  active:
-    'border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
 
-  completed:
-    'border-silver-500/30 bg-silver-500/10 text-silver-300',
+if (currentDeployment.reviewed_by) {
+  const {
+    data: reviewerData,
+    error: reviewerError,
+  } = await supabase
+    .from('members')
+    .select(`
+      full_name,
+      callsign
+    `)
+    .eq(
+      'id',
+      currentDeployment.reviewed_by
+    )
+    .single();
 
-  cancelled:
-    'border-danger-500/30 bg-danger-500/10 text-danger-400',
-};
 
-function formatDate(
-  value: string | null
-) {
-  if (!value) {
-    return '—';
+  if (reviewerError) {
+    console.error(
+      'REVIEWER ERROR:',
+      reviewerError
+    );
   }
+
+
+  reviewer = reviewerData;
+}
+
+
+// =====================================================
+// HELPERS
+// =====================================================
+
+const formatDate = (
+  value: string | null
+) => {
+  if (!value) return '—';
 
   return new Intl.DateTimeFormat(
     'es-PY',
     {
-      dateStyle: 'medium',
-      timeStyle: 'short',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     }
   ).format(new Date(value));
-}
+};
 
-function getParticipantName(
-  participant: any
-) {
+
+const formatShortDate = (
+  value: string | null
+) => {
+  if (!value) return '—';
+
+  return new Intl.DateTimeFormat(
+    'es-PY',
+    {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    }
+  ).format(new Date(value));
+};
+
+
+const getMemberName = (
+  memberData: any
+) => {
+  if (!memberData) return 'Desconocido';
+
   return (
-    participant.members?.full_name ||
-    'Miembro desconocido'
+    memberData.full_name ||
+    memberData.callsign ||
+    'Sin identificar'
   );
-}
+};
 
-function getParticipantCallsign(
-  participant: any
-) {
-  return (
-    participant.members?.callsign ||
-    '—'
-  );
-}
 
-function getRoleLabel(
-  role: string
-) {
-  return role === 'alpha'
-    ? 'ALPHA'
-    : 'OPERADOR';
-}
+const getCallsign = (
+  memberData: any
+) => {
+  if (!memberData) return '—';
 
-function getDuration() {
-  if (
-    !currentDeployment.started_at ||
-    !currentDeployment.ended_at
-  ) {
-    return null;
-  }
+  return memberData.callsign
+    ? memberData.callsign
+    : '—';
+};
 
-  const start =
-    new Date(
-      currentDeployment.started_at
-    ).getTime();
 
-  const end =
-    new Date(
-      currentDeployment.ended_at
-    ).getTime();
+const isReviewed =
+  currentDeployment.report_status ===
+  'reviewed';
 
-  const seconds =
-    Math.max(0, end - start) / 1000;
+const reportStatusLabel = isReviewed
+  ? 'REVISADO'
+  : 'EN ESPERA DE REVISIÓN';
 
-  const hours = Math.floor(
-    seconds / 3600
-  );
-
-  const minutes = Math.floor(
-    (seconds % 3600) / 60
-  );
-
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`;
-  }
-
-  return `${minutes}m`;
-}
-
-const duration =
-  getDuration();
-
-const alpha =
-  participants?.find(
-    (participant) =>
-      participant.role === 'alpha'
-  );
-
-const operators =
-  participants?.filter(
-    (participant) =>
-      participant.role !== 'alpha'
-  ) ?? [];
+const reportStatusClass = isReviewed
+  ? 'border-green-500/30 bg-green-500/10 text-green-400'
+  : 'border-gold-500/30 bg-gold-500/10 text-gold-400';
 ---
 
 <OperatorLayout
-  title={`Despliegue ${currentDeployment.code}`}
+  title={currentDeployment.title}
   active="operaciones"
 >
-  <div
-    class="mx-auto w-full max-w-7xl space-y-6"
-  >
 
-    <!-- =====================================================
-         HEADER
-    ====================================================== -->
+  <div class="space-y-6">
+
+    <!-- ================================================= -->
+    <!-- HEADER -->
+    <!-- ================================================= -->
 
     <section
       class="relative overflow-hidden border border-base-600 bg-base-900"
     >
-      <div
-        class="absolute inset-0 tac-grid opacity-30"
-      ></div>
 
-      <div
-        class="relative flex flex-col gap-6 p-6 lg:p-8"
-      >
+      <div class="absolute inset-0 tac-grid opacity-30"></div>
 
-        <!-- HEADER PRINCIPAL -->
+      <div class="relative p-6 md:p-8">
+
+        <!-- Breadcrumb -->
 
         <div
-          class="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between"
+          class="mb-6 flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.2em] text-silver-500"
+        >
+          <a
+            href="/despliegues"
+            class="transition hover:text-gold-500"
+          >
+            DESPLIEGUES
+          </a>
+
+          <span>/</span>
+
+          <span>
+            {currentDeployment.code}
+          </span>
+        </div>
+
+
+        <!-- Title -->
+
+        <div
+          class="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between"
         >
 
           <div>
@@ -382,258 +387,323 @@ const operators =
             >
 
               <span
-                class="font-mono text-xs font-bold tracking-[0.25em] text-gold-500"
+                class="border border-green-500/30 bg-green-500/10 px-3 py-1 text-[10px] font-mono font-bold tracking-[0.15em] text-green-400"
               >
-                DESPLIEGUE
+                OPERACIÓN COMPLETADA
               </span>
 
               <span
-                class="font-mono text-xs text-silver-500"
+                class={`border px-3 py-1 text-[10px] font-mono font-bold tracking-[0.15em] ${reportStatusClass}`}
               >
-                //
-              </span>
-
-              <span
-                class="font-mono text-xs font-bold tracking-[0.2em] text-silver-300"
-              >
-                {currentDeployment.code}
+                {reportStatusLabel}
               </span>
 
             </div>
 
+
             <h1
-              class="font-display text-3xl font-black uppercase tracking-tight text-bone-100 sm:text-4xl"
+              class="font-display text-3xl font-black uppercase tracking-tight text-bone-100 md:text-5xl"
             >
               {currentDeployment.title}
             </h1>
 
-            <p
-              class="mt-2 max-w-3xl text-sm text-silver-400"
-            >
-              {currentDeployment.type}
 
-              <span
-                class="mx-2 text-base-500"
-              >
-                /
+            <div
+              class="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-mono text-silver-400"
+            >
+
+              <span>
+                {currentDeployment.code}
               </span>
 
-              {currentDeployment.location}
-            </p>
+              <span class="text-base-600">
+                //
+              </span>
+
+              <span>
+                {currentDeployment.type}
+              </span>
+
+              <span class="text-base-600">
+                //
+              </span>
+
+              <span>
+                {currentDeployment.location}
+              </span>
+
+            </div>
 
           </div>
 
-          <div
-            class={`inline-flex w-fit items-center border px-4 py-2 font-mono text-xs font-bold tracking-[0.15em] ${
-              statusClasses[
-                currentDeployment.status
-              ] ??
-              'border-base-600 bg-base-800 text-silver-300'
-            }`}
-          >
 
-            <span
-              class="mr-2 h-2 w-2 rounded-full bg-current"
-            ></span>
+          <!-- Review action -->
 
-            {
-              statusLabels[
-                currentDeployment.status
-              ] ??
-              currentDeployment.status
-            }
+          {
+            !isReviewed && isLeader && (
+              <button
+                id="review-button"
+                type="button"
+                class="group flex shrink-0 items-center justify-center gap-3 border border-gold-500 bg-gold-500 px-5 py-3 text-xs font-black tracking-[0.12em] text-base-950 transition hover:bg-gold-400"
+              >
 
-          </div>
+                <span>
+                  ✓
+                </span>
+
+                <span>
+                  MARCAR COMO REVISADO
+                </span>
+
+              </button>
+            )
+          }
 
         </div>
 
-        <!-- INFORMACIÓN TEMPORAL -->
+      </div>
+
+    </section>
+
+
+    <!-- ================================================= -->
+    <!-- META -->
+    <!-- ================================================= -->
+
+    <section
+      class="grid grid-cols-1 gap-px border border-base-600 bg-base-600 sm:grid-cols-2 lg:grid-cols-4"
+    >
+
+      <!-- CREATED -->
+
+      <div class="bg-base-900 p-5">
 
         <div
-          class="grid gap-px border border-base-700 bg-base-700 sm:grid-cols-2 lg:grid-cols-4"
+          class="mb-2 text-[9px] font-mono font-bold tracking-[0.2em] text-silver-500"
         >
+          INFORME CREADO
+        </div>
 
-          <div
-            class="bg-base-900 p-4"
-          >
-            <p
-              class="font-mono text-[10px] font-bold tracking-[0.2em] text-silver-500"
-            >
-              CREADO
-            </p>
+        <div
+          class="font-mono text-sm font-bold text-bone-100"
+        >
+          {formatShortDate(
+            currentDeployment.created_at
+          )}
+        </div>
 
-            <p
-              class="mt-1 text-sm text-bone-100"
-            >
-              {
-                formatDate(
-                  currentDeployment.created_at
-                )
-              }
-            </p>
-          </div>
-
-          <div
-            class="bg-base-900 p-4"
-          >
-            <p
-              class="font-mono text-[10px] font-bold tracking-[0.2em] text-silver-500"
-            >
-              INICIO
-            </p>
-
-            <p
-              class="mt-1 text-sm text-bone-100"
-            >
-              {
-                formatDate(
-                  currentDeployment.started_at
-                )
-              }
-            </p>
-          </div>
-
-          <div
-            class="bg-base-900 p-4"
-          >
-            <p
-              class="font-mono text-[10px] font-bold tracking-[0.2em] text-silver-500"
-            >
-              FINALIZACIÓN
-            </p>
-
-            <p
-              class="mt-1 text-sm text-bone-100"
-            >
-              {
-                formatDate(
-                  currentDeployment.ended_at
-                )
-              }
-            </p>
-          </div>
-
-          <div
-            class="bg-base-900 p-4"
-          >
-            <p
-              class="font-mono text-[10px] font-bold tracking-[0.2em] text-silver-500"
-            >
-              DURACIÓN
-            </p>
-
-            <p
-              class="mt-1 text-sm font-semibold text-gold-400"
-            >
-              {duration ?? 'Pendiente'}
-            </p>
-          </div>
-
+        <div
+          class="mt-1 text-[10px] font-mono text-silver-500"
+        >
+          {formatDate(
+            currentDeployment.created_at
+          )}
         </div>
 
       </div>
-    </section>
 
-    <!-- =====================================================
-         CONTROL OPERATIVO
-    ====================================================== -->
 
-    <section
-      class="flex flex-col gap-3 border border-base-700 bg-base-900 p-4 sm:flex-row sm:items-center sm:justify-between"
-    >
+      <!-- ALPHA -->
 
-      <div>
+      <div class="bg-base-900 p-5">
 
-        <p
-          class="font-mono text-xs font-bold tracking-[0.2em] text-silver-500"
+        <div
+          class="mb-2 text-[9px] font-mono font-bold tracking-[0.2em] text-silver-500"
         >
-          CONTROL OPERATIVO
-        </p>
+          ALPHA RESPONSABLE
+        </div>
 
-        <p
-          class="mt-1 text-sm text-silver-400"
+        <div
+          class="font-mono text-sm font-bold text-bone-100"
         >
-          Gestión del estado del despliegue.
-        </p>
+          {getCallsign(
+            currentDeployment.members
+          )}
+        </div>
+
+        <div
+          class="mt-1 truncate text-[10px] font-mono text-silver-500"
+        >
+          {getMemberName(
+            currentDeployment.members
+          )}
+        </div>
 
       </div>
 
-      <div
-        class="flex flex-wrap gap-2"
-      >
 
-        {
-          currentDeployment.status ===
-            'draft' && (
-            <button
-              id="start-deployment"
-              type="button"
-              class="border border-emerald-500/40 bg-emerald-500/10 px-5 py-3 font-mono text-xs font-bold tracking-[0.15em] text-emerald-400 transition hover:bg-emerald-500/20"
-            >
-              INICIAR DESPLIEGUE
-            </button>
-          )
-        }
+      <!-- LOCATION -->
 
-        {
-          currentDeployment.status ===
-            'active' && (
-            <button
-              id="finish-deployment"
-              type="button"
-              class="border border-gold-500/40 bg-gold-500/10 px-5 py-3 font-mono text-xs font-bold tracking-[0.15em] text-gold-400 transition hover:bg-gold-500/20"
-            >
-              FINALIZAR DESPLIEGUE
-            </button>
-          )
-        }
+      <div class="bg-base-900 p-5">
 
-        <a
-          href="/despliegues"
-          class="border border-base-600 bg-base-800 px-5 py-3 font-mono text-xs font-bold tracking-[0.15em] text-silver-300 transition hover:border-base-500 hover:text-bone-100"
+        <div
+          class="mb-2 text-[9px] font-mono font-bold tracking-[0.2em] text-silver-500"
         >
-          VOLVER
-        </a>
+          UBICACIÓN
+        </div>
+
+        <div
+          class="truncate font-mono text-sm font-bold uppercase text-bone-100"
+        >
+          {currentDeployment.location}
+        </div>
+
+      </div>
+
+
+      <!-- REPORT -->
+
+      <div class="bg-base-900 p-5">
+
+        <div
+          class="mb-2 text-[9px] font-mono font-bold tracking-[0.2em] text-silver-500"
+        >
+          ESTADO DEL INFORME
+        </div>
+
+        <div
+          class={`font-mono text-sm font-bold ${
+            isReviewed
+              ? 'text-green-400'
+              : 'text-gold-400'
+          }`}
+        >
+          {reportStatusLabel}
+        </div>
+
+        {
+          isReviewed && currentDeployment.reviewed_at && (
+            <div
+              class="mt-1 text-[10px] font-mono text-silver-500"
+            >
+              {formatDate(
+                currentDeployment.reviewed_at
+              )}
+            </div>
+          )
+        }
 
       </div>
 
     </section>
 
-    <!-- =====================================================
-         RESUMEN
-    ====================================================== -->
+
+    <!-- ================================================= -->
+    <!-- REVISIÓN -->
+    <!-- ================================================= -->
+
+    {
+      isReviewed && (
+        <section
+          class="border border-green-500/20 bg-green-500/5"
+        >
+
+          <div class="p-5">
+
+            <div
+              class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+            >
+
+              <div>
+
+                <div
+                  class="text-[9px] font-mono font-bold tracking-[0.2em] text-green-400"
+                >
+                  ✓ INFORME REVISADO
+                </div>
+
+                <div
+                  class="mt-2 font-display text-lg font-bold uppercase text-bone-100"
+                >
+                  Este despliegue fue validado por un líder.
+                </div>
+
+              </div>
+
+
+              {
+                reviewer && (
+                  <div
+                    class="text-left sm:text-right"
+                  >
+
+                    <div
+                      class="text-[9px] font-mono tracking-[0.15em] text-silver-500"
+                    >
+                      REVISADO POR
+                    </div>
+
+                    <div
+                      class="mt-1 font-mono text-sm font-bold text-bone-100"
+                    >
+                      {reviewer.callsign
+                        ? `${reviewer.callsign} — `
+                        : ''}
+                      {reviewer.full_name ||
+                        'Líder SRT'}
+                    </div>
+
+                    {
+                      currentDeployment.reviewed_at && (
+                        <div
+                          class="mt-1 text-[10px] font-mono text-silver-500"
+                        >
+                          {formatDate(
+                            currentDeployment.reviewed_at
+                          )}
+                        </div>
+                      )
+                    }
+
+                  </div>
+                )
+              }
+
+            </div>
+
+          </div>
+
+        </section>
+      )
+    }
+
+
+    <!-- ================================================= -->
+    <!-- RESUMEN -->
+    <!-- ================================================= -->
 
     <section
-      class="border border-base-700 bg-base-900"
+      class="border border-base-600 bg-base-900"
     >
 
       <div
-        class="border-b border-base-700 px-5 py-4"
+        class="border-b border-base-600 px-5 py-4"
       >
-        <p
-          class="font-mono text-xs font-bold tracking-[0.2em] text-gold-500"
+
+        <div
+          class="text-[10px] font-mono font-bold tracking-[0.2em] text-gold-500"
         >
           01 // RESUMEN GENERAL
-        </p>
+        </div>
+
       </div>
 
-      <div class="p-5">
+
+      <div class="p-5 md:p-6">
 
         {
           currentDeployment.description ? (
             <p
               class="whitespace-pre-wrap text-sm leading-7 text-silver-300"
             >
-              {
-                currentDeployment.description
-              }
+              {currentDeployment.description}
             </p>
           ) : (
-            <p
-              class="font-mono text-xs text-silver-600"
+            <div
+              class="text-xs font-mono text-silver-500"
             >
-              SIN RESUMEN REGISTRADO
-            </p>
+              SIN RESUMEN REGISTRADO.
+            </div>
           )
         }
 
@@ -641,128 +711,110 @@ const operators =
 
     </section>
 
-    <!-- =====================================================
-         PERSONAL DESPLEGADO
-    ====================================================== -->
+
+    <!-- ================================================= -->
+    <!-- PERSONAL -->
+    <!-- ================================================= -->
 
     <section
-      class="border border-base-700 bg-base-900"
+      class="border border-base-600 bg-base-900"
     >
 
       <div
-        class="flex items-center justify-between border-b border-base-700 px-5 py-4"
+        class="border-b border-base-600 px-5 py-4"
       >
 
-        <div>
-
-          <p
-            class="font-mono text-xs font-bold tracking-[0.2em] text-gold-500"
-          >
-            02 // PERSONAL DESPLEGADO
-          </p>
-
-          <p
-            class="mt-1 text-xs text-silver-500"
-          >
-            {participants?.length ?? 0}
-            miembros
-          </p>
-
+        <div
+          class="text-[10px] font-mono font-bold tracking-[0.2em] text-gold-500"
+        >
+          02 // PERSONAL PARTICIPANTE
         </div>
 
       </div>
 
+
       <div class="p-5">
 
         {
-          participants &&
-          participants.length > 0 ? (
+          participants && participants.length > 0 ? (
             <div
               class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
             >
 
               {
-                participants.map(
-                  (participant) => (
+                participants.map((participant: any) => {
+
+                  const participantMember =
+                    Array.isArray(
+                      participant.members
+                    )
+                      ? participant.members[0]
+                      : participant.members;
+
+                  const isAlpha =
+                    participant.role === 'alpha';
+
+                  return (
                     <div
-                      class="border border-base-700 bg-base-800 p-4"
+                      class={`border p-4 ${
+                        isAlpha
+                          ? 'border-gold-500/30 bg-gold-500/5'
+                          : 'border-base-600 bg-base-950'
+                      }`}
                     >
 
                       <div
-                        class="flex items-center gap-3"
+                        class="flex items-center justify-between gap-3"
                       >
 
-                        <div
-                          class="flex h-10 w-10 shrink-0 items-center justify-center border border-base-600 bg-base-900 font-mono text-xs font-bold text-gold-500"
-                        >
-                          {
-                            getParticipantCallsign(
-                              participant
-                            ).slice(0, 3)
-                          }
-                        </div>
+                        <div>
 
-                        <div
-                          class="min-w-0"
-                        >
-
-                          <p
-                            class="truncate text-sm font-semibold text-bone-100"
+                          <div
+                            class="font-mono text-sm font-bold text-bone-100"
                           >
-                            {
-                              getParticipantName(
-                                participant
-                              )
-                            }
-                          </p>
+                            {getCallsign(
+                              participantMember
+                            )}
+                          </div>
 
-                          <p
-                            class="font-mono text-xs text-silver-500"
+                          <div
+                            class="mt-1 text-xs text-silver-400"
                           >
-                            {
-                              getParticipantCallsign(
-                                participant
-                              )
-                            }
-                          </p>
+                            {getMemberName(
+                              participantMember
+                            )}
+                          </div>
 
                         </div>
 
-                      </div>
-
-                      <div
-                        class="mt-3 border-t border-base-700 pt-3"
-                      >
 
                         <span
-                          class={`font-mono text-[10px] font-bold tracking-[0.15em] ${
-                            participant.role ===
-                            'alpha'
+                          class={`text-[9px] font-mono font-bold tracking-[0.15em] ${
+                            isAlpha
                               ? 'text-gold-400'
                               : 'text-silver-500'
                           }`}
                         >
-                          {
-                            getRoleLabel(
-                              participant.role
-                            )
-                          }
+                          {isAlpha
+                            ? 'ALPHA'
+                            : 'OPERADOR'}
                         </span>
 
                       </div>
 
                     </div>
-                  )
-                )
+                  );
+
+                })
               }
 
             </div>
           ) : (
-            <p
-              class="font-mono text-xs text-silver-600"
+            <div
+              class="text-xs font-mono text-silver-500"
             >
-              SIN PARTICIPANTES REGISTRADOS.
-            </p>
+              SIN PERSONAL REGISTRADO.
+            </div>
           )
         }
 
@@ -770,108 +822,150 @@ const operators =
 
     </section>
 
-    <!-- =====================================================
-         SOSPECHOSOS / VEHÍCULOS
-    ====================================================== -->
+
+    <!-- ================================================= -->
+    <!-- SOSPECHOSOS -->
+    <!-- ================================================= -->
+
+    <section
+      class="border border-base-600 bg-base-900"
+    >
+
+      <div
+        class="border-b border-base-600 px-5 py-4"
+      >
+
+        <div
+          class="text-[10px] font-mono font-bold tracking-[0.2em] text-gold-500"
+        >
+          03 // SOSPECHOSOS
+        </div>
+
+      </div>
+
+
+      <div class="p-5">
+
+        {
+          suspects && suspects.length > 0 ? (
+            <div class="space-y-3">
+
+              {
+                suspects.map((suspect: any, index: number) => (
+                  <div
+                    class="border border-base-600 bg-base-950 p-4"
+                  >
+
+                    <div
+                      class="grid gap-4 md:grid-cols-2"
+                    >
+
+                      <div>
+
+                        <div
+                          class="mb-1 text-[9px] font-mono tracking-[0.15em] text-silver-500"
+                        >
+                          SOSPECHOSO #{index + 1}
+                        </div>
+
+                        <div
+                          class="font-mono text-sm font-bold text-bone-100"
+                        >
+                          {suspect.identification ||
+                            'SIN IDENTIFICACIÓN'}
+                        </div>
+
+                      </div>
+
+
+                      <div>
+
+                        <div
+                          class="mb-1 text-[9px] font-mono tracking-[0.15em] text-silver-500"
+                        >
+                          OBJETOS INCAUTADOS
+                        </div>
+
+                        <div
+                          class="whitespace-pre-wrap text-sm text-silver-300"
+                        >
+                          {suspect.confiscated_items ||
+                            'NINGUNO REGISTRADO'}
+                        </div>
+
+                      </div>
+
+                    </div>
+
+                  </div>
+                ))
+              }
+
+            </div>
+          ) : (
+            <div
+              class="text-xs font-mono text-silver-500"
+            >
+              SIN SOSPECHOSOS REGISTRADOS.
+            </div>
+          )
+        }
+
+      </div>
+
+    </section>
+
+
+    <!-- ================================================= -->
+    <!-- VEHÍCULOS + EQUIPAMIENTO -->
+    <!-- ================================================= -->
 
     <div
       class="grid gap-6 lg:grid-cols-2"
     >
 
-      <!-- SOSPECHOSOS -->
+      <!-- VEHÍCULOS -->
 
       <section
-        class="border border-base-700 bg-base-900"
+        class="border border-base-600 bg-base-900"
       >
 
         <div
-          class="border-b border-base-700 px-5 py-4"
+          class="border-b border-base-600 px-5 py-4"
         >
 
-          <p
-            class="font-mono text-xs font-bold tracking-[0.2em] text-gold-500"
+          <div
+            class="text-[10px] font-mono font-bold tracking-[0.2em] text-gold-500"
           >
-            03 // SOSPECHOSOS
-          </p>
+            04 // VEHÍCULOS UTILIZADOS
+          </div>
 
         </div>
+
 
         <div class="p-5">
 
           {
-            suspects &&
-            suspects.length > 0 ? (
-              <div class="space-y-3">
+            vehicles && vehicles.length > 0 ? (
+              <div class="space-y-2">
 
                 {
-                  suspects.map(
-                    (suspect, index) => (
-                      <div
-                        class="border border-base-700 bg-base-800 p-4"
-                      >
-
-                        <div
-                          class="flex gap-3"
-                        >
-
-                          <span
-                            class="font-mono text-xs text-gold-500"
-                          >
-                            {
-                              String(
-                                index + 1
-                              ).padStart(
-                                2,
-                                '0'
-                              )
-                            }
-                          </span>
-
-                          <div
-                            class="min-w-0 flex-1"
-                          >
-
-                            <p
-                              class="text-sm font-semibold text-bone-100"
-                            >
-                              {
-                                suspect.identification ||
-                                suspect.name ||
-                                'Sin identificación'
-                              }
-                            </p>
-
-                            <p
-                              class="mt-2 font-mono text-[10px] font-bold tracking-[0.15em] text-silver-500"
-                            >
-                              OBJETOS INCAUTADOS
-                            </p>
-
-                            <p
-                              class="mt-1 whitespace-pre-wrap text-sm text-silver-300"
-                            >
-                              {
-                                suspect.confiscated_items ||
-                                'Ninguno registrado'
-                              }
-                            </p>
-
-                          </div>
-
-                        </div>
-
-                      </div>
-                    )
-                  )
+                  vehicles.map((vehicle: any) => (
+                    <div
+                      class="border border-base-600 bg-base-950 px-4 py-3 text-sm text-silver-300"
+                    >
+                      {vehicle.description}
+                    </div>
+                  ))
                 }
 
               </div>
             ) : (
-              <p
-                class="font-mono text-xs text-silver-600"
+              <div
+                class="text-xs font-mono text-silver-500"
               >
-                NO SE REGISTRARON SOSPECHOSOS.
-              </p>
+                SIN VEHÍCULOS REGISTRADOS.
+              </div>
             )
           }
 
@@ -879,71 +973,49 @@ const operators =
 
       </section>
 
-      <!-- VEHÍCULOS -->
+
+      <!-- EQUIPAMIENTO -->
 
       <section
-        class="border border-base-700 bg-base-900"
+        class="border border-base-600 bg-base-900"
       >
 
         <div
-          class="border-b border-base-700 px-5 py-4"
+          class="border-b border-base-600 px-5 py-4"
         >
 
-          <p
-            class="font-mono text-xs font-bold tracking-[0.2em] text-gold-500"
+          <div
+            class="text-[10px] font-mono font-bold tracking-[0.2em] text-gold-500"
           >
-            04 // VEHÍCULOS UTILIZADOS
-          </p>
+            05 // MATERIAL UTILIZADO
+          </div>
 
         </div>
+
 
         <div class="p-5">
 
           {
-            vehicles &&
-            vehicles.length > 0 ? (
+            equipment && equipment.length > 0 ? (
               <div class="space-y-2">
 
                 {
-                  vehicles.map(
-                    (vehicle, index) => (
-                      <div
-                        class="flex items-center gap-3 border border-base-700 bg-base-800 p-4"
-                      >
-
-                        <span
-                          class="font-mono text-xs text-gold-500"
-                        >
-                          {
-                            String(
-                              index + 1
-                            ).padStart(
-                              2,
-                              '0'
-                            )
-                          }
-                        </span>
-
-                        <span
-                          class="text-sm text-silver-300"
-                        >
-                          {
-                            vehicle.description
-                          }
-                        </span>
-
-                      </div>
-                    )
-                  )
+                  equipment.map((item: any) => (
+                    <div
+                      class="border border-base-600 bg-base-950 px-4 py-3 text-sm text-silver-300"
+                    >
+                      {item.description}
+                    </div>
+                  ))
                 }
 
               </div>
             ) : (
-              <p
-                class="font-mono text-xs text-silver-600"
+              <div
+                class="text-xs font-mono text-silver-500"
               >
-                NO SE REGISTRARON VEHÍCULOS.
-              </p>
+                SIN MATERIAL REGISTRADO.
+              </div>
             )
           }
 
@@ -953,164 +1025,54 @@ const operators =
 
     </div>
 
-    <!-- =====================================================
-         MATERIAL UTILIZADO
-    ====================================================== -->
+
+    <!-- ================================================= -->
+    <!-- GRABACIONES -->
+    <!-- ================================================= -->
 
     <section
-      class="border border-base-700 bg-base-900"
+      class="border border-base-600 bg-base-900"
     >
 
       <div
-        class="border-b border-base-700 px-5 py-4"
+        class="border-b border-base-600 px-5 py-4"
       >
 
-        <p
-          class="font-mono text-xs font-bold tracking-[0.2em] text-gold-500"
-        >
-          05 // MATERIAL UTILIZADO
-        </p>
-
-      </div>
-
-      <div class="p-5">
-
-        {
-          equipment &&
-          equipment.length > 0 ? (
-            <div
-              class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3"
-            >
-
-              {
-                equipment.map(
-                  (item, index) => (
-                    <div
-                      class="border border-base-700 bg-base-800 p-4"
-                    >
-
-                      <p
-                        class="font-mono text-[10px] font-bold text-gold-500"
-                      >
-                        {
-                          String(
-                            index + 1
-                          ).padStart(
-                            2,
-                            '0'
-                          )
-                        }
-                      </p>
-
-                      <p
-                        class="mt-2 text-sm text-silver-300"
-                      >
-                        {
-                          item.description
-                        }
-                      </p>
-
-                    </div>
-                  )
-                )
-              }
-
-            </div>
-          ) : (
-            <p
-              class="font-mono text-xs text-silver-600"
-            >
-              NO SE REGISTRÓ MATERIAL.
-            </p>
-          )
-        }
-
-      </div>
-
-    </section>
-
-    <!-- =====================================================
-         GRABACIONES
-    ====================================================== -->
-
-    <section
-      class="border border-base-700 bg-base-900"
-    >
-
-      <div
-        class="border-b border-base-700 px-5 py-4"
-      >
-
-        <p
-          class="font-mono text-xs font-bold tracking-[0.2em] text-gold-500"
+        <div
+          class="text-[10px] font-mono font-bold tracking-[0.2em] text-gold-500"
         >
           06 // GRABACIONES
-        </p>
+        </div>
 
       </div>
+
 
       <div class="p-5">
 
         {
-          recordings &&
-          recordings.length > 0 ? (
+          recordings && recordings.length > 0 ? (
             <div class="space-y-2">
 
               {
-                recordings.map(
-                  (recording, index) => (
-                    <a
-                      href={recording.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      class="flex items-center justify-between border border-base-700 bg-base-800 p-4 transition hover:border-gold-500/40 hover:bg-base-800/80"
-                    >
-
-                      <div
-                        class="min-w-0"
-                      >
-
-                        <p
-                          class="font-mono text-[10px] font-bold tracking-[0.15em] text-gold-500"
-                        >
-                          GRABACIÓN {
-                            String(
-                              index + 1
-                            ).padStart(
-                              2,
-                              '0'
-                            )
-                          }
-                        </p>
-
-                        <p
-                          class="mt-1 truncate text-sm text-silver-300"
-                        >
-                          {
-                            recording.url
-                          }
-                        </p>
-
-                      </div>
-
-                      <span
-                        class="ml-4 shrink-0 font-mono text-xs text-silver-500"
-                      >
-                        ABRIR →
-                      </span>
-
-                    </a>
-                  )
-                )
+                recordings.map((recording: any) => (
+                  <a
+                    href={recording.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="block border border-base-600 bg-base-950 px-4 py-3 font-mono text-xs text-gold-400 transition hover:border-gold-500 hover:bg-gold-500/5"
+                  >
+                    {recording.url}
+                  </a>
+                ))
               }
 
             </div>
           ) : (
-            <p
-              class="font-mono text-xs text-silver-600"
+            <div
+              class="text-xs font-mono text-silver-500"
             >
-              NO SE REGISTRARON GRABACIONES.
-            </p>
+              SIN GRABACIONES REGISTRADAS.
+            </div>
           )
         }
 
@@ -1119,4 +1081,111 @@ const operators =
     </section>
 
   </div>
+
+
+  <!-- ================================================= -->
+  <!-- REVIEW SCRIPT -->
+  <!-- ================================================= -->
+
+  {
+    !isReviewed && isLeader && (
+      <script>
+        const reviewButton =
+          document.querySelector<HTMLButtonElement>(
+            '#review-button'
+          );
+
+        reviewButton?.addEventListener(
+          'click',
+          async () => {
+
+            if (!reviewButton) return;
+
+            const confirmed =
+              window.confirm(
+                '¿Confirmás que revisaste este informe?'
+              );
+
+            if (!confirmed) return;
+
+
+            reviewButton.disabled = true;
+
+            reviewButton.innerHTML =
+              '<span>...</span><span>REVISANDO INFORME</span>';
+
+
+            try {
+
+              const response =
+                await fetch(
+                  '/api/despliegues/revisar',
+                  {
+                    method: 'POST',
+
+                    headers: {
+                      'Content-Type':
+                        'application/json',
+                    },
+
+                    body: JSON.stringify({
+                      deploymentId:
+                        Number('{currentDeployment.id}')
+                    }),
+                  }
+                );
+
+
+              const text =
+                await response.text();
+
+
+              let result: any = null;
+
+              try {
+                result = JSON.parse(text);
+              } catch {
+                throw new Error(
+                  'Respuesta inválida del servidor.'
+                );
+              }
+
+
+              if (!response.ok || !result.success) {
+                throw new Error(
+                  result.error ||
+                  'No se pudo revisar el informe.'
+                );
+              }
+
+
+              window.location.reload();
+
+            } catch (error) {
+
+              console.error(
+                'REVIEW ERROR:',
+                error
+              );
+
+              alert(
+                error instanceof Error
+                  ? error.message
+                  : 'No se pudo revisar el informe.'
+              );
+
+
+              reviewButton.disabled = false;
+
+              reviewButton.innerHTML =
+                '<span>✓</span><span>MARCAR COMO REVISADO</span>';
+
+            }
+
+          }
+        );
+      </script>
+    )
+  }
+
 </OperatorLayout>

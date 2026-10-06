@@ -13,12 +13,12 @@ const { title = 'Panel', active = '', isLeader = false } = Astro.props;
 
 // href null = sección aún sin página (se muestra como "Pronto")
 const nav = [
-  { key: 'inicio', label: 'Inicio', code: '01', href: '/' },
-  { key: 'operaciones', label: 'Despliegues', code: '02', href: '/despliegues' },
-  { key: 'miembros', label: 'Miembros', code: '03', href: '/miembros' },
-  { key: 'mapa', label: 'Mapa', code: '04', href: '/mapa' },
-  { key: 'estadisticas', label: 'Estadísticas', code: '05', href: '/estadisticas' },
-  { key: 'perfil', label: 'Mi perfil', code: '06', href: '/perfil' },
+  { key: 'inicio', label: 'Inicio', short: 'Inicio', href: '/', icon: 'M3 11l9-8 9 8v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z' },
+  { key: 'mapa', label: 'Mapa táctico', short: 'Mapa', href: '/mapa', icon: 'M9 4 3 6v14l6-2 6 2 6-2V4l-6 2zM9 4v14M15 6v14' },
+  { key: 'despliegues', label: 'Despliegues', short: 'Despl.', href: '/despliegues', icon: 'M12 3v4M12 17v4M3 12h4M17 12h4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z' },
+  { key: 'miembros', label: 'Miembros', short: 'Miembros', href: '/miembros', icon: 'M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20c0-3 3-5 6-5s6 2 6 5M17 11a3 3 0 1 0 0-6M15 15c3 0 6 2 6 5' },
+  { key: 'estadisticas', label: 'Estadísticas', short: 'Stats', href: '/estadisticas', icon: 'M4 20V10M10 20V4M16 20v-8M22 20H2' },
+  { key: 'perfil', label: 'Mi perfil', short: 'Perfil', href: '/perfil', icon: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5 21c0-4 3-6 7-6s7 2 7 6' },
 ];
 
 const mobileNav = nav.filter((item) => item.href);
@@ -90,7 +90,7 @@ const mobileNav = nav.filter((item) => item.href);
                     : 'border-transparent hover:border-base-600 hover:bg-base-800',
                 ]}
               >
-                <span class="font-mono text-[11px] text-gold-500">{item.code}</span>
+                <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 text-gold-500" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={item.icon} /></svg>
                 <span
                   class:list={[
                     'font-display text-sm uppercase tracking-wider',
@@ -102,7 +102,7 @@ const mobileNav = nav.filter((item) => item.href);
               </a>
             ) : (
               <div class="mb-1 flex items-center gap-3 border-l-2 border-transparent px-4 py-3 opacity-50">
-                <span class="font-mono text-[11px] text-base-600">{item.code}</span>
+                <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0 text-base-600" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={item.icon} /></svg>
                 <span class="font-display text-sm uppercase tracking-wider text-silver-300">
                   {item.label}
                 </span>
@@ -135,7 +135,7 @@ const mobileNav = nav.filter((item) => item.href);
 
     <!-- NAVEGACIÓN (móvil) -->
     <nav
-      class="grid shrink-0 grid-cols-5 border-t border-base-600/60 bg-base-900 lg:hidden"
+      class="grid shrink-0 grid-cols-6 border-t border-base-600/60 bg-base-900 lg:hidden"
       aria-label="Navegación principal"
     >
       {mobileNav.map((item) => (
@@ -149,9 +149,9 @@ const mobileNav = nav.filter((item) => item.href);
               : 'border-transparent text-silver-300',
           ]}
         >
-          <span class="font-mono text-[10px]">{item.code}</span>
-          <span class="max-w-full truncate px-1 font-display text-[11px] uppercase tracking-wide">
-            {item.label}
+          <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={item.icon} /></svg>
+          <span class="max-w-full truncate px-1 font-display text-[10px] uppercase tracking-wide">
+            {item.short}
           </span>
         </a>
       ))}

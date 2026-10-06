@@ -1,83 +1,230 @@
 ---
 import OperatorLayout from '../../layouts/OperatorLayout.astro';
 import { getCurrentMember } from '../../lib/auth';
+import { createApiClient } from '../../lib/supabase-api';
 
-const {
-  member,
-} = await getCurrentMember(Astro);
+const { member } = await getCurrentMember(Astro);
 
 if (!member) {
   return Astro.redirect('/login');
 }
+
+const supabase = createApiClient(Astro.request, Astro.cookies);
+
+const DEFAULT_PHOTO = '/images/default-operator.jpg';
+
+// La foto es una ruta de un bucket privado: se firma aquí, en el servidor
+async function resolvePhoto(path: string | null): Promise<string> {
+  if (!path) return DEFAULT_PHOTO;
+  if (/^https?:\/\//.test(path)) return path;
+
+  const { data } = await supabase.storage
+    .from('avatars')
+    .createSignedUrl(path, 3600);
+
+  return data?.signedUrl ?? DEFAULT_PHOTO;
+}
+
+const rankId = member.rank?.id ?? null;
+
+async function checkLeader(): Promise<boolean> {
+  if (!rankId) return false;
+
+  const { data: perm } = await supabase
+    .from('rank_permissions')
+    .select('permission_key')
+    .eq('rank_id', rankId)
+    .eq('permission_key', 'admin.access')
+    .maybeSingle();
+
+  return !!perm;
+}
+
+const [photoSrc, isLeader] = await Promise.all([
+  resolvePhoto(member.photo_url ?? null),
+  checkLeader(),
+]);
+
+const types = [
+  'Atrincheramiento Vehicular',
+  'Atrincheramiento con Rehenes',
+  'Atrincheramiento involuntario',
+  'Emboscada',
+  'Allanamiento',
+  'Secuestro',
+  'Otro',
+];
+
+// Mismos colores que el medidor de riesgo del listado
+const risks = [
+  {
+    value: 'Crítico',
+    code: 'R4',
+    level: 4,
+    desc: 'En la situación se contó con oficiales y/o civiles abatidos',
+    text: 'text-danger-500',
+    hover: 'group-hover:border-danger-500/50',
+    checked: 'peer-checked:border-danger-500 peer-checked:bg-danger-500/10',
+  },
+  {
+    value: 'Alto',
+    code: 'R3',
+    level: 3,
+    desc: 'En la situación hubo un intercambio de disparos por parte de oficiales y/o civiles pero no se contó con abatidos',
+    text: 'text-gold-500',
+    hover: 'group-hover:border-gold-500/50',
+    checked: 'peer-checked:border-gold-500 peer-checked:bg-gold-500/10',
+  },
+  {
+    value: 'Medio',
+    code: 'R2',
+    level: 2,
+    desc: 'En la situación se presentó un sospechoso armado sin intercambio de disparos',
+    text: 'text-silver-300',
+    hover: 'group-hover:border-silver-300/50',
+    checked: 'peer-checked:border-silver-300 peer-checked:bg-silver-300/10',
+  },
+  {
+    value: 'Bajo',
+    code: 'R1',
+    level: 1,
+    desc: 'En la situación no se presentó ningún tipo de amenaza contra oficiales',
+    text: 'text-blue-600',
+    hover: 'group-hover:border-blue-600/60',
+    checked: 'peer-checked:border-blue-600 peer-checked:bg-blue-600/10',
+  },
+];
+
+// Secciones 04–07
+const repeaters = [
+  {
+    key: 'suspects',
+    n: '04',
+    title: 'Sospechosos',
+    sub: 'Personas involucradas y elementos incautados.',
+    add: 'Agregar sospechoso',
+    empty: 'No se agregaron sospechosos.',
+  },
+  {
+    key: 'vehicles',
+    n: '05',
+    title: 'Vehículos utilizados',
+    sub: 'Unidades utilizadas durante el despliegue.',
+    add: 'Agregar vehículo',
+    empty: 'No se agregaron vehículos.',
+  },
+  {
+    key: 'equipment',
+    n: '06',
+    title: 'Material utilizado',
+    sub: 'Equipamiento táctico empleado durante la operación.',
+    add: 'Agregar material',
+    empty: 'No se agregó material.',
+  },
+  {
+    key: 'recordings',
+    n: '07',
+    title: 'Grabaciones',
+    sub: 'Enlaces a videos del despliegue.',
+    add: 'Agregar grabación',
+    empty:
+      'Recuerda: Añadir grabaciones de toda la situación es obligatorio para cada uno de los operadores.',
+  },
+];
 ---
 
 <OperatorLayout
   title="Nuevo despliegue"
-  active="operaciones"
+  active="despliegues"
+  isLeader={isLeader}
 >
-  <main class="space-y-6">
+  <div class="mx-auto max-w-4xl space-y-5">
 
-    <!-- HEADER -->
+    <!-- ===================================================== -->
+    <!-- CABECERA -->
+    <!-- ===================================================== -->
 
-    <section class="border border-base-600 bg-base-900 p-6">
+    <section class="tac-grid brackets border border-base-600/60 bg-base-900 p-5 md:p-6">
 
-      <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+      <p class="flex items-center gap-3 font-mono text-[10px] uppercase tracking-[0.25em] text-gold-500">
+        <span class="h-px w-10 bg-gold-500"></span>
+        SRT || Registro de despliegue
+      </p>
+
+      <div class="mt-3 flex flex-col justify-between gap-5 md:flex-row md:items-end">
 
         <div>
-          <p class="font-mono text-xs uppercase tracking-[0.25em] text-gold-500">
-            SRT / OPERACIONES
-          </p>
-
-          <h1 class="mt-2 font-display text-3xl uppercase tracking-wide text-bone-100">
+          <h2 class="font-display text-3xl font-bold uppercase leading-none tracking-wide md:text-4xl">
             Nuevo despliegue
-          </h1>
+          </h2>
 
-          <p class="mt-2 max-w-2xl text-sm text-silver-300">
-            Registrar una nueva intervención operativa.
-            Los datos del Alpha, código y timestamps
-            serán gestionados automáticamente por el sistema.
+          <p class="mt-3 max-w-2xl text-sm leading-6 text-silver-300">
+            Registro operativo posterior a un despliegue táctico.
+            Completá la información de la situación para dejar constancia
+            del despliegue.
           </p>
         </div>
 
-        <a
-          href="/despliegues"
-          class="border border-base-600 px-4 py-2 text-xs font-mono uppercase tracking-wider text-silver-300 transition hover:border-gold-500 hover:text-gold-500"
-        >
-          ← Volver
-        </a>
+        <dl class="shrink-0 space-y-1.5 border-l-2 border-base-600 pl-4 font-mono text-[10px] uppercase tracking-[0.15em]">
+
+          <div class="flex gap-4">
+            <dt class="w-14 text-silver-300">Código</dt>
+            <dd class="text-bone-100">Automático</dd>
+          </div>
+
+          <div class="flex gap-4">
+            <dt class="w-14 text-silver-300">Estado</dt>
+            <dd class="text-gold-500">Pendiente de revisión</dd>
+          </div>
+
+        </dl>
 
       </div>
-
     </section>
 
 
-    <!-- FORMULARIO -->
+    <form id="deployment-form" class="space-y-5" novalidate>
 
-    <form
-      id="deployment-form"
-      class="space-y-6"
-    >
+      <!-- ===================================================== -->
+      <!-- 01 · INFORMACIÓN GENERAL -->
+      <!-- ===================================================== -->
 
-      <!-- INFORMACIÓN GENERAL -->
+      <section class="border border-base-600/60 bg-base-900">
 
-      <section class="border border-base-600 bg-base-900">
+        <header class="flex items-center justify-between gap-4 border-b border-base-600/50 px-5 py-3.5">
 
-        <div class="border-b border-base-600 px-6 py-4">
-          <p class="font-mono text-xs uppercase tracking-[0.2em] text-gold-500">
-            01 / Información general
-          </p>
-        </div>
+          <div class="flex items-center gap-4">
 
-        <div class="grid gap-6 p-6 md:grid-cols-2">
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center border border-gold-500/50 font-mono text-xs text-gold-500">
+              01
+            </span>
 
-          <!-- TITULO -->
+            <div>
+              <h2 class="font-display text-lg font-bold uppercase leading-none tracking-wide">
+                Información general
+              </h2>
+
+              <p class="mt-1 font-mono text-[10px] uppercase tracking-wider text-silver-300">
+                Datos principales del despliegue
+              </p>
+            </div>
+
+          </div>
+
+          <span class="fx-tag hidden sm:block !text-red-500">
+            Obligatorio
+          </span>
+
+        </header>
+
+
+        <div class="grid gap-5 p-5 md:grid-cols-2">
+
+          <!-- TÍTULO -->
 
           <div class="md:col-span-2">
 
-            <label
-              for="title"
-              class="mb-2 block font-mono text-xs uppercase tracking-wider text-silver-300"
-            >
+            <label for="title" class="fx-label">
               Título del despliegue
             </label>
 
@@ -86,8 +233,9 @@ if (!member) {
               name="title"
               type="text"
               required
-              placeholder="Ej. Atrincheramiento Vehicular Sandy Shores"
-              class="w-full border border-base-600 bg-base-950 px-4 py-3 text-sm text-bone-100 outline-none transition placeholder:text-silver-500 focus:border-gold-500"
+              maxlength="150"
+              placeholder="Ejemplo: Atrincheramiento Vehicular en Sandy Shores"
+              class="fx-input"
             />
 
           </div>
@@ -97,10 +245,7 @@ if (!member) {
 
           <div>
 
-            <label
-              for="type"
-              class="mb-2 block font-mono text-xs uppercase tracking-wider text-silver-300"
-            >
+            <label for="type" class="fx-label">
               Tipo de despliegue
             </label>
 
@@ -108,37 +253,17 @@ if (!member) {
               id="type"
               name="type"
               required
-              class="w-full border border-base-600 bg-base-950 px-4 py-3 text-sm text-bone-100 outline-none focus:border-gold-500"
+              class="fx-input cursor-pointer"
             >
-
               <option value="">
                 Seleccionar tipo
               </option>
 
-              <option value="Atrincheramiento con rehenes">
-                Atrincheramiento con rehenes
-              </option>
-
-              <option value="Atrincheramiento involuntario">
-                Atrincheramiento involuntario
-              </option>
-
-              <option value="Atrincheramiento vehicular">
-                Atrincheramiento vehicular
-              </option>
-
-              <option value="Emboscada">
-                Emboscada
-              </option>
-
-              <option value="Allanamiento">
-                Allanamiento
-              </option>
-
-              <option value="Secuestro">
-                Secuestro
-              </option>
-
+              {types.map((t) => (
+                <option value={t}>
+                  {t}
+                </option>
+              ))}
             </select>
 
           </div>
@@ -148,10 +273,7 @@ if (!member) {
 
           <div>
 
-            <label
-              for="location"
-              class="mb-2 block font-mono text-xs uppercase tracking-wider text-silver-300"
-            >
+            <label for="location" class="fx-label">
               Ubicación
             </label>
 
@@ -160,93 +282,222 @@ if (!member) {
               name="location"
               type="text"
               required
-              placeholder="Ej. Sandy Shores"
-              class="w-full border border-base-600 bg-base-950 px-4 py-3 text-sm text-bone-100 outline-none transition placeholder:text-silver-500 focus:border-gold-500"
+              maxlength="150"
+              placeholder="Ejemplo: Sandy Shores / Panorama Drive."
+              class="fx-input"
             />
 
           </div>
 
 
-          <!-- ALPHA -->
+          <!-- RIESGO -->
 
-          <div>
+          <div class="md:col-span-2">
 
-            <label
-              class="mb-2 block font-mono text-xs uppercase tracking-wider text-silver-300"
+            <div class="mb-2 flex items-center justify-between">
+
+              <span id="risk-label" class="fx-label !mb-0">
+                Nivel de riesgo
+              </span>
+
+              <span
+                id="risk-preview"
+                class="font-mono text-[10px] uppercase tracking-wider text-silver-300"
+              >
+                Sin clasificar
+              </span>
+
+            </div>
+
+
+            <div
+              id="risk-group"
+              role="radiogroup"
+              aria-labelledby="risk-label"
+              tabindex="-1"
+              class="grid grid-cols-2 gap-3 lg:grid-cols-4"
             >
-              Alpha
-            </label>
 
-            <div class="border border-base-600 bg-base-950 px-4 py-3">
+              {risks.map((r) => (
 
-              <div class="flex items-center gap-3">
+                <label class="group block cursor-pointer">
 
-                {member.photo_url ? (
-                  <img
-                    src={member.photo_url}
-                    alt=""
-                    class="h-10 w-10 rounded-full object-cover"
+                  <input
+                    type="radio"
+                    name="riskLevel"
+                    value={r.value}
+                    data-tone={r.text}
+                    class="peer sr-only"
                   />
-                ) : (
-                  <div class="flex h-10 w-10 items-center justify-center rounded-full border border-base-600 bg-base-800 font-mono text-xs text-gold-500">
-                    {member.full_name?.slice(0, 1) ?? '?'}
+
+                  <div
+                    class={`h-full border border-base-600/70 bg-base-950 p-3.5 ${r.hover} ${r.checked} peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-gold-500`}
+                  >
+
+                    <div class={`mb-3 flex items-center justify-between ${r.text}`}>
+
+                      <span class="flex items-end gap-0.5" aria-hidden="true">
+
+                        {[1, 2, 3, 4].map((n) => (
+
+                          <span
+                            class={`w-1.5 ${
+                              n <= r.level
+                                ? 'bg-current'
+                                : 'bg-base-600/60'
+                            }`}
+                            style={`height:${6 + n * 2}px`}
+                          ></span>
+
+                        ))}
+
+                      </span>
+
+                      <span class="font-mono text-[10px]">
+                        {r.code}
+                      </span>
+
+                    </div>
+
+                    <p class="font-display text-base font-bold uppercase tracking-wide text-bone-100">
+                      {r.value}
+                    </p>
+
+                    <p class="mt-1 text-[11px] leading-4 text-silver-300">
+                      {r.desc}
+                    </p>
+
                   </div>
-                )}
 
-                <div>
-                  <p class="text-sm text-bone-100">
-                    {member.full_name}
-                  </p>
+                </label>
 
-                  <p class="font-mono text-xs text-silver-400">
-                    {member.callsign ?? 'SIN CALLSIGN'}
-                  </p>
+              ))}
+
+            </div>
+
+          </div>
+
+        </div>
+      </section>
+
+
+      <!-- ===================================================== -->
+      <!-- 02 · OPERADORES -->
+      <!-- ===================================================== -->
+
+      <section class="border border-base-600/60 bg-base-900">
+
+        <header class="flex items-center justify-between gap-4 border-b border-base-600/50 px-5 py-3.5">
+
+          <div class="flex items-center gap-4">
+
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center border border-gold-500/50 font-mono text-xs text-gold-500">
+              02
+            </span>
+
+            <div>
+
+              <h2 class="font-display text-lg font-bold uppercase leading-none tracking-wide">
+                Operadores
+              </h2>
+
+              <p class="mt-1 font-mono text-[10px] uppercase tracking-wider text-silver-300">
+                Operadores que participaron en la intervención
+              </p>
+
+            </div>
+
+          </div>
+
+          <span id="operators-count" class="fx-tag">
+            0 seleccionados
+          </span>
+
+        </header>
+
+
+        <div class="space-y-4 p-5">
+
+          <!-- LÍDER DE SITUACIÓN -->
+
+          <div class="flex items-center justify-between gap-4 border border-gold-500/30 bg-gold-500/5 p-4">
+
+            <div class="flex min-w-0 items-center gap-4">
+
+              <div class="brackets h-14 w-14 shrink-0" style="--b: 8px">
+
+                <div class="h-full w-full overflow-hidden border border-base-600 bg-base-800">
+
+                  <img
+                    src={photoSrc}
+                    alt={member.full_name ?? 'Alpha'}
+                    class="h-full w-full object-cover grayscale-[.3]"
+                    onerror="this.onerror=null;this.src='/images/default-operator.jpg'"
+                  />
+
                 </div>
+
+              </div>
+
+
+              <div class="min-w-0">
+
+                <p class="font-mono text-[10px] uppercase tracking-[0.2em] text-gold-500">
+                  Líder de situación
+                </p>
+
+                <p class="mt-1 truncate font-display text-lg font-bold uppercase leading-none tracking-wide">
+                  {member.full_name ?? 'Sin nombre'}
+                </p>
+
+                <p class="mt-1 truncate font-mono text-[11px] uppercase tracking-wider text-silver-300">
+                  {member.callsign ?? 'SIN CALLSIGN'}
+                  {member.rank?.name ? ` · ${member.rank.name}` : ''}
+                </p>
 
               </div>
 
             </div>
 
+
+            <div class="hidden shrink-0 text-right sm:block">
+
+              <p class="font-mono text-[9px] uppercase tracking-[0.2em] text-silver-300">
+                Asignación
+              </p>
+
+              <p class="mt-1 font-mono text-xs uppercase tracking-wider text-gold-500">
+                Automática
+              </p>
+
+            </div>
+
           </div>
 
-        </div>
 
-      </section>
-
-
-      <!-- PARTICIPANTES -->
-
-      <section class="border border-base-600 bg-base-900">
-
-        <div class="border-b border-base-600 px-6 py-4">
-          <p class="font-mono text-xs uppercase tracking-[0.2em] text-gold-500">
-            02 / Operadores
-          </p>
-        </div>
-
-        <div class="p-6">
-
-          <label
-            for="operator-search"
-            class="mb-2 block font-mono text-xs uppercase tracking-wider text-silver-300"
-          >
-            Buscar operador
-          </label>
+          <!-- BUSCADOR -->
 
           <input
             id="operator-search"
-            type="text"
-            placeholder="Buscar por nombre o callsign..."
-            class="mb-4 w-full border border-base-600 bg-base-950 px-4 py-3 text-sm text-bone-100 outline-none placeholder:text-silver-500 focus:border-gold-500"
+            type="search"
+            placeholder="Buscar por nombre, callsign o rango"
+            aria-label="Buscar operadores"
+            class="fx-input"
           />
+
+
+          <!-- LISTA DE OPERADORES -->
 
           <div
             id="operators-list"
-            class="grid gap-2 md:grid-cols-2"
+            data-self-id={member.id}
+            class="thin-scroll grid max-h-80 gap-3 overflow-y-auto sm:grid-cols-2"
           >
-            <div class="border border-base-600 bg-base-950 p-4 text-sm text-silver-400">
+
+            <p class="p-3 font-mono text-[11px] uppercase tracking-wider text-silver-300 sm:col-span-2">
               Cargando operadores...
-            </div>
+            </p>
+
           </div>
 
         </div>
@@ -254,30 +505,66 @@ if (!member) {
       </section>
 
 
-      <!-- RESUMEN -->
+      <!-- ===================================================== -->
+      <!-- 03 · RESUMEN -->
+      <!-- ===================================================== -->
 
-      <section class="border border-base-600 bg-base-900">
+      <section class="border border-base-600/60 bg-base-900">
 
-        <div class="border-b border-base-600 px-6 py-4">
-          <p class="font-mono text-xs uppercase tracking-[0.2em] text-gold-500">
-            03 / Resumen general
-          </p>
-        </div>
+        <header class="flex items-center justify-between gap-4 border-b border-base-600/50 px-5 py-3.5">
 
-        <div class="p-6">
+          <div class="flex items-center gap-4">
 
-          <label
-            for="description"
-            class="mb-2 block font-mono text-xs uppercase tracking-wider text-silver-300"
-          >
-            Resumen general
-          </label>
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center border border-gold-500/50 font-mono text-xs text-gold-500">
+              03
+            </span>
+
+            <div>
+
+              <h2 class="font-display text-lg font-bold uppercase leading-none tracking-wide">
+                Resumen general del despliegue
+              </h2>
+
+              <p class="mt-1 font-mono text-[10px] uppercase tracking-wider text-silver-300">
+                La situación general desde el inicio hasta su finalización.
+              </p>
+
+            </div>
+
+          </div>
+
+          <span class="fx-tag hidden sm:block">
+            Opcional
+          </span>
+
+        </header>
+
+
+        <div class="p-5">
+
+          <div class="mb-2 flex items-center justify-between">
+
+            <label for="description" class="fx-label !mb-0">
+              Descripción del despliegue
+            </label>
+
+            <span
+              id="description-count"
+              class="font-mono text-[10px] tabular-nums text-silver-300"
+            >
+              0 / 5000
+            </span>
+
+          </div>
+
 
           <textarea
             id="description"
+            name="description"
             rows="7"
-            placeholder="Describí el desarrollo de la situación desde el inicio hasta su finalización."
-            class="w-full resize-y border border-base-600 bg-base-950 px-4 py-3 text-sm text-bone-100 outline-none placeholder:text-silver-500 focus:border-gold-500"
+            maxlength="5000"
+            placeholder="Describe cómo comenzó la situación, la intervención del SRT, las acciones realizadas y cómo finalizó..."
+            class="fx-input resize-y leading-6"
           ></textarea>
 
         </div>
@@ -285,957 +572,1284 @@ if (!member) {
       </section>
 
 
-      <!-- SOSPECHOSOS -->
+      <!-- ===================================================== -->
+      <!-- 04–07 · LISTAS DINÁMICAS -->
+      <!-- ===================================================== -->
 
-      <section class="border border-base-600 bg-base-900">
+      {repeaters.map((r) => (
 
-        <div class="flex items-center justify-between border-b border-base-600 px-6 py-4">
+        <section class="border border-base-600/60 bg-base-900">
 
-          <div>
-            <p class="font-mono text-xs uppercase tracking-[0.2em] text-gold-500">
-              04 / Sospechosos
+          <header class="flex items-center justify-between gap-4 border-b border-base-600/50 px-5 py-3.5">
+
+            <div class="flex items-center gap-4">
+
+              <span class="flex h-8 w-8 shrink-0 items-center justify-center border border-gold-500/50 font-mono text-xs text-gold-500">
+                {r.n}
+              </span>
+
+              <div>
+
+                <h2 class="font-display text-lg font-bold uppercase leading-none tracking-wide">
+                  {r.title}
+                </h2>
+
+                <p class="mt-1 font-mono text-[10px] uppercase tracking-wider text-silver-300">
+                  {r.sub}
+                </p>
+
+              </div>
+
+            </div>
+
+
+            <div class="flex items-center gap-3">
+
+              <span
+                data-count={r.key}
+                class="fx-tag hidden sm:block"
+              >
+                0
+              </span>
+
+              <button
+                type="button"
+                data-add={r.key}
+                class="cursor-pointer border border-gold-500/50 px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-gold-500 hover:bg-gold-500 hover:text-base-950"
+              >
+                +
+                <span class="hidden sm:inline">
+                  {r.add}
+                </span>
+
+                <span class="sm:hidden">
+                  Agregar
+                </span>
+              </button>
+
+            </div>
+
+          </header>
+
+
+          <div
+            data-repeater={r.key}
+            class="space-y-3 p-5"
+          >
+
+            <p
+              data-empty
+              class="border border-dashed border-base-600 px-4 py-4 text-center font-mono text-[11px] uppercase tracking-wider text-silver-300"
+            >
+              {r.empty}
             </p>
 
-            <p class="mt-1 text-xs text-silver-500">
-              Identificación y objetos incautados.
-            </p>
           </div>
 
-          <button
-            type="button"
-            id="add-suspect"
-            class="border border-base-600 px-3 py-2 font-mono text-xs uppercase tracking-wider text-silver-300 transition hover:border-gold-500 hover:text-gold-500"
+        </section>
+
+      ))}
+
+
+      <!-- ERROR -->
+
+      <div
+        id="form-error"
+        role="alert"
+        hidden
+        class="border border-danger-500/50 bg-danger-500/10 p-4 font-mono text-xs uppercase tracking-wider text-danger-500"
+      ></div>
+
+
+      <!-- BARRA DE ACCIONES -->
+
+      <div class="sticky bottom-0 border border-base-600/60 bg-base-900/95 p-3 backdrop-blur">
+
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+
+          <p
+            id="form-summary"
+            class="font-mono text-[10px] uppercase tracking-[0.15em] text-silver-300"
           >
-            + Agregar
-          </button>
-
-        </div>
-
-        <div
-          id="suspects-container"
-          class="space-y-3 p-6"
-        >
-          <p class="text-sm text-silver-500">
-            No se agregaron sospechosos.
+            Riesgo — · 0 operadores
           </p>
-        </div>
-
-      </section>
 
 
-      <!-- VEHICULOS -->
+          <div class="flex gap-3">
 
-      <section class="border border-base-600 bg-base-900">
+            <a
+              href="/despliegues"
+              class="flex flex-1 cursor-pointer items-center justify-center border border-base-600 px-5 py-3 font-mono text-xs uppercase tracking-wider text-silver-300 hover:border-bone-100 hover:text-bone-100 sm:flex-none"
+            >
+              Cancelar
+            </a>
 
-        <div class="flex items-center justify-between border-b border-base-600 px-6 py-4">
 
-          <div>
-            <p class="font-mono text-xs uppercase tracking-[0.2em] text-gold-500">
-              05 / Vehículos utilizados
-            </p>
+            <button
+              id="submit-button"
+              type="submit"
+              class="submit-btn flex-1 cursor-pointer sm:flex-none"
+            >
+              Crear despliegue
+            </button>
+
           </div>
 
-          <button
-            type="button"
-            id="add-vehicle"
-            class="border border-base-600 px-3 py-2 font-mono text-xs uppercase tracking-wider text-silver-300 transition hover:border-gold-500 hover:text-gold-500"
-          >
-            + Agregar
-          </button>
-
         </div>
 
-        <div
-          id="vehicles-container"
-          class="space-y-3 p-6"
-        >
-          <p class="text-sm text-silver-500">
-            No se agregaron vehículos.
-          </p>
-        </div>
-
-      </section>
-
-
-      <!-- MATERIAL -->
-
-      <section class="border border-base-600 bg-base-900">
-
-        <div class="flex items-center justify-between border-b border-base-600 px-6 py-4">
-
-          <div>
-            <p class="font-mono text-xs uppercase tracking-[0.2em] text-gold-500">
-              06 / Material utilizado
-            </p>
-          </div>
-
-          <button
-            type="button"
-            id="add-equipment"
-            class="border border-base-600 px-3 py-2 font-mono text-xs uppercase tracking-wider text-silver-300 transition hover:border-gold-500 hover:text-gold-500"
-          >
-            + Agregar
-          </button>
-
-        </div>
-
-        <div
-          id="equipment-container"
-          class="space-y-3 p-6"
-        >
-          <p class="text-sm text-silver-500">
-            No se agregó material.
-          </p>
-        </div>
-
-      </section>
-
-
-      <!-- GRABACIONES -->
-
-      <section class="border border-base-600 bg-base-900">
-
-        <div class="flex items-center justify-between border-b border-base-600 px-6 py-4">
-
-          <div>
-            <p class="font-mono text-xs uppercase tracking-[0.2em] text-gold-500">
-              07 / Grabaciones
-            </p>
-          </div>
-
-          <button
-            type="button"
-            id="add-recording"
-            class="border border-base-600 px-3 py-2 font-mono text-xs uppercase tracking-wider text-silver-300 transition hover:border-gold-500 hover:text-gold-500"
-          >
-            + Agregar
-          </button>
-
-        </div>
-
-        <div
-          id="recordings-container"
-          class="space-y-3 p-6"
-        >
-          <p class="text-sm text-silver-500">
-            No se agregaron grabaciones.
-          </p>
-        </div>
-
-      </section>
-
-
-      <!-- ACCIONES -->
-
-      <section class="flex flex-col-reverse gap-3 border border-base-600 bg-base-900 p-6 sm:flex-row sm:justify-end">
-
-        <a
-          href="/despliegues"
-          class="border border-base-600 px-6 py-3 text-center font-mono text-xs uppercase tracking-wider text-silver-300 transition hover:border-base-400 hover:text-bone-100"
-        >
-          Cancelar
-        </a>
-
-        <button
-          type="submit"
-          id="submit-button"
-          class="bg-gold-500 px-6 py-3 font-mono text-xs uppercase tracking-wider text-base-950 transition hover:bg-gold-400 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Crear despliegue
-        </button>
-
-      </section>
+      </div>
 
     </form>
 
-  </main>
+  </div>
+</OperatorLayout>
 
 
-  <script>
-    const form =
-      document.querySelector<HTMLFormElement>(
-        '#deployment-form'
-      );
+<style is:global>
 
-    const submitButton =
-      document.querySelector<HTMLButtonElement>(
-        '#submit-button'
-      );
+  /* Campos del formulario */
 
-    const operatorsList =
-      document.querySelector<HTMLDivElement>(
-        '#operators-list'
-      );
+  .fx-label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-family: var(--font-mono, 'JetBrains Mono', monospace);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #b8bcc0;
+  }
 
-    const operatorSearch =
-      document.querySelector<HTMLInputElement>(
-        '#operator-search'
-      );
+  .fx-tag {
+    border: 1px solid #3a3f44;
+    padding: 0.2rem 0.5rem;
+    font-family: var(--font-mono, 'JetBrains Mono', monospace);
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #b8bcc0;
+  }
 
-    const suspectsContainer =
-      document.querySelector<HTMLDivElement>(
-        '#suspects-container'
-      );
+  .fx-input {
+    display: block;
+    width: 100%;
+    padding: 0.65rem 0.8rem;
+    font-size: 0.875rem;
+    color: #ece8e1;
+    background: #0b0c0d;
+    border: 1px solid #3a3f44;
+    border-radius: 0;
+    outline: none;
+    color-scheme: dark;
+  }
 
-    const vehiclesContainer =
-      document.querySelector<HTMLDivElement>(
-        '#vehicles-container'
-      );
+  .fx-input:focus {
+    border-color: #e3ba19;
+  }
 
-    const equipmentContainer =
-      document.querySelector<HTMLDivElement>(
-        '#equipment-container'
-      );
+  .fx-input::placeholder {
+    color: rgb(184 188 192 / 0.45);
+  }
 
-    const recordingsContainer =
-      document.querySelector<HTMLDivElement>(
-        '#recordings-container'
-      );
+  .fx-input[aria-invalid='true'],
+  #risk-group[aria-invalid='true'] {
+    border-color: #c2410c;
+    outline: 1px solid #c2410c;
+    outline-offset: 2px;
+  }
 
 
-    // =========================================================
-    // OPERADORES
-    // =========================================================
+  /* Tarjeta de operador */
 
-    type Member = {
-      id: string;
-      full_name: string | null;
-      callsign: string | null;
-      photo_url: string | null;
-      rank?: {
-        name: string;
-      } | null;
-    };
+  .op-card {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    background: #0b0c0d;
+    border: 1px solid rgb(58 63 68 / 0.7);
+    cursor: pointer;
+  }
 
-    let members: Member[] = [];
+  .op-card:hover {
+    border-color: rgb(227 186 25 / 0.5);
+  }
 
-    async function loadMembers() {
-      if (!operatorsList) return;
+  .op-input:checked + .op-card {
+    border-color: #e3ba19;
+    background: rgb(227 186 25 / 0.08);
+  }
 
-      try {
-        const response = await fetch(
-          '/api/miembros'
-        );
+  .op-input:checked + .op-card .op-check {
+    background: #e3ba19;
+    border-color: #e3ba19;
+    color: #0b0c0d;
+  }
 
-        if (!response.ok) {
-          throw new Error(
-            'No se pudieron cargar los operadores.'
-          );
-        }
+  .op-input:focus-visible + .op-card {
+    outline: 2px solid #e3ba19;
+    outline-offset: 2px;
+  }
 
-        members = await response.json();
+  .op-input:disabled + .op-card {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
 
-        renderMembers();
+  .op-check {
+    display: flex;
+    height: 1rem;
+    width: 1rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #3a3f44;
+    font-size: 10px;
+    font-weight: 700;
+    color: transparent;
+  }
 
-      } catch (error) {
-        console.error(error);
 
-        operatorsList.innerHTML = `
-          <div class="border border-danger-500/40 bg-danger-500/5 p-4 text-sm text-danger-500">
-            No se pudieron cargar los operadores.
-          </div>
-        `;
-      }
+  /* Botón principal */
+
+  .submit-btn {
+    padding: 0.75rem 1.75rem;
+    font-family: var(--font-display, 'Barlow Condensed', sans-serif);
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: #0b0c0d;
+    background: #e3ba19;
+    clip-path: polygon(
+      0 0,
+      calc(100% - 12px) 0,
+      100% 12px,
+      100% 100%,
+      0 100%
+    );
+  }
+
+  .submit-btn:hover {
+    background: #ece8e1;
+  }
+
+  .submit-btn:disabled {
+    background: #3a3f44;
+    color: #1b1e21;
+    cursor: not-allowed;
+  }
+
+</style>
+
+
+<script>
+
+  type Member = {
+    id: string;
+    full_name: string | null;
+    callsign: string | null;
+    photo_url: string | null;
+    rank?: {
+      name: string;
+    } | null;
+  };
+
+  type Field = {
+    key: string;
+    placeholder: string;
+    type?: string;
+    max?: number;
+  };
+
+
+  const $ = <T extends HTMLElement>(selector: string) =>
+    document.querySelector<T>(selector);
+
+
+  const form = $('#deployment-form') as HTMLFormElement | null;
+  const submitButton = $('#submit-button') as HTMLButtonElement | null;
+  const errorBox = $('#form-error') as HTMLElement | null;
+  const summary = $('#form-summary') as HTMLElement | null;
+
+  const operatorsList =
+    $('#operators-list') as HTMLElement | null;
+
+  const operatorSearch =
+    $('#operator-search') as HTMLInputElement | null;
+
+  const operatorsCount =
+    $('#operators-count') as HTMLElement | null;
+
+  const riskPreview =
+    $('#risk-preview') as HTMLElement | null;
+
+  const riskGroup =
+    $('#risk-group') as HTMLElement | null;
+
+  const description =
+    $('#description') as HTMLTextAreaElement | null;
+
+  const descriptionCount =
+    $('#description-count') as HTMLElement | null;
+
+
+  const escapeHtml = (value: string) =>
+    value.replace(
+      /[&<>"']/g,
+      (c) =>
+        ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;',
+        })[c]!
+    );
+
+
+  // Error asociado a un campo concreto
+
+  class FieldError extends Error {
+
+    target?: HTMLElement | null;
+
+    constructor(
+      message: string,
+      target?: HTMLElement | null
+    ) {
+      super(message);
+      this.target = target;
     }
 
-    function renderMembers() {
-      if (!operatorsList) return;
+  }
 
-      const search =
-        operatorSearch?.value
-          .trim()
-          .toLowerCase() ?? '';
 
-      const filtered =
-        members.filter((member) => {
+  // ---------------------------------------------------------
+  // CAMBIOS SIN GUARDAR
+  // ---------------------------------------------------------
 
-          const text = [
-            member.full_name ?? '',
-            member.callsign ?? '',
-            member.rank?.name ?? '',
-          ]
-            .join(' ')
-            .toLowerCase();
+  let dirty = false;
 
-          return text.includes(search);
-        });
 
-      if (filtered.length === 0) {
-        operatorsList.innerHTML = `
-          <div class="border border-base-600 bg-base-950 p-4 text-sm text-silver-500">
-            No se encontraron operadores.
-          </div>
-        `;
+  form?.addEventListener('input', (event) => {
 
-        return;
+    dirty = true;
+
+    (event.target as HTMLElement)
+      .removeAttribute('aria-invalid');
+
+  });
+
+
+  window.addEventListener(
+    'beforeunload',
+    (event) => {
+
+      if (dirty) {
+
+        event.preventDefault();
+        event.returnValue = '';
+
       }
 
-      operatorsList.innerHTML =
-        filtered
-          .map((member) => {
+    }
+  );
 
-            const checked =
-              member.id ===
-              '${member.id}';
 
-            return `
-              <label
-                class="flex cursor-pointer items-center gap-3 border border-base-600 bg-base-950 p-4 transition hover:border-gold-500"
-              >
+  // ---------------------------------------------------------
+  // LISTAS DINÁMICAS
+  // ---------------------------------------------------------
 
-                <input
-                  type="checkbox"
-                  value="${member.id}"
-                  class="operator-checkbox h-4 w-4 accent-yellow-500"
+  const repeaters: Record<string, { fields: Field[] }> = {
+
+    suspects: {
+
+      fields: [
+        {
+          key: 'identification',
+          placeholder:
+            'Identificación (nombre, alias, descripción)',
+        },
+        {
+          key: 'confiscatedItems',
+          placeholder:
+            'Objetos incautados',
+        },
+      ],
+
+    },
+
+    vehicles: {
+
+      fields: [
+        {
+          key: 'description',
+          placeholder:
+            'Ej. Dodge Charger negro - B32',
+        },
+      ],
+
+    },
+
+    equipment: {
+
+      fields: [
+        {
+          key: 'description',
+          placeholder:
+            'Ej. Escudo balístico, rifle, dron...',
+        },
+      ],
+
+    },
+
+    recordings: {
+
+      fields: [
+        {
+          key: 'url',
+          type: 'url',
+          max: 500,
+          placeholder: 'https://...',
+        },
+      ],
+
+    },
+
+  };
+
+
+  const containerOf = (name: string) =>
+    $<HTMLElement>(
+      `[data-repeater="${name}"]`
+    );
+
+
+  const rowsOf = (name: string) =>
+    Array.from(
+      containerOf(name)
+        ?.querySelectorAll<HTMLElement>('[data-row]')
+      ?? []
+    );
+
+
+  function refreshRepeater(name: string) {
+
+    const container = containerOf(name);
+
+    if (!container) return;
+
+    const rows = rowsOf(name);
+
+    rows.forEach((row, i) => {
+
+      const index =
+        row.querySelector('[data-index]');
+
+      if (index) {
+
+        index.textContent =
+          `#${String(i + 1).padStart(2, '0')}`;
+
+      }
+
+    });
+
+
+    const empty =
+      container.querySelector<HTMLElement>(
+        '[data-empty]'
+      );
+
+    if (empty) {
+
+      empty.hidden = rows.length > 0;
+
+    }
+
+
+    const badge =
+      $<HTMLElement>(
+        `[data-count="${name}"]`
+      );
+
+    if (badge) {
+
+      badge.textContent =
+        String(rows.length);
+
+    }
+
+
+    updateSummary();
+
+  }
+
+
+  function addRow(name: string) {
+
+    const config = repeaters[name];
+
+    const container = containerOf(name);
+
+    if (!config || !container) return;
+
+
+    const row = document.createElement('div');
+
+    row.dataset.row = '';
+
+    row.className =
+      'flex flex-col gap-3 border border-base-600/70 bg-base-950 p-3 sm:flex-row sm:items-center';
+
+
+    row.innerHTML = `
+
+      <span
+        data-index
+        class="font-mono text-[10px] text-gold-500"
+      ></span>
+
+      <div
+        class="grid min-w-0 flex-1 gap-3 ${
+          config.fields.length > 1
+            ? 'sm:grid-cols-2'
+            : ''
+        }"
+      >
+
+        ${config.fields
+          .map(
+            (f) => `
+              <input
+                type="${f.type ?? 'text'}"
+                data-key="${f.key}"
+                maxlength="${f.max ?? 200}"
+                placeholder="${f.placeholder}"
+                aria-label="${f.placeholder}"
+                class="fx-input"
+              />
+            `
+          )
+          .join('')}
+
+      </div>
+
+
+      <button
+        type="button"
+        data-remove
+        aria-label="Quitar"
+        class="cursor-pointer border border-base-600 px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-silver-300 hover:border-danger-500 hover:text-danger-500"
+      >
+        Quitar
+      </button>
+
+    `;
+
+
+    container.appendChild(row);
+
+    refreshRepeater(name);
+
+    row
+      .querySelector<HTMLInputElement>('input')
+      ?.focus();
+
+    dirty = true;
+
+  }
+
+
+  function collect(name: string) {
+
+    const config = repeaters[name];
+
+    return rowsOf(name)
+
+      .map((row) =>
+        Object.fromEntries(
+
+          config.fields.map((f) => [
+
+            f.key,
+
+            (
+              row.querySelector<HTMLInputElement>(
+                `[data-key="${f.key}"]`
+              )?.value ?? ''
+            ).trim(),
+
+          ])
+
+        )
+      )
+
+      .filter((item) =>
+        Object.values(item).some(Boolean)
+      );
+
+  }
+
+
+  Object.keys(repeaters).forEach((name) => {
+
+    $<HTMLButtonElement>(
+      `[data-add="${name}"]`
+    )?.addEventListener(
+      'click',
+      () => addRow(name)
+    );
+
+
+    containerOf(name)?.addEventListener(
+      'click',
+      (event) => {
+
+        const button =
+          (event.target as HTMLElement)
+            .closest('[data-remove]');
+
+        if (!button) return;
+
+        button
+          .closest('[data-row]')
+          ?.remove();
+
+        refreshRepeater(name);
+
+      }
+    );
+
+  });
+
+
+  // ---------------------------------------------------------
+  // OPERADORES
+  // ---------------------------------------------------------
+
+  const selfId =
+    operatorsList?.dataset.selfId ?? '';
+
+  const selected =
+    new Set<string>();
+
+
+  let members: Member[] = [];
+
+
+  async function loadMembers() {
+
+    if (!operatorsList) return;
+
+
+    try {
+
+      const response =
+        await fetch('/api/miembros');
+
+
+      if (!response.ok) {
+
+        throw new Error(
+          'No se pudieron cargar los operadores.'
+        );
+
+      }
+
+
+      members = await response.json();
+
+      renderMembers();
+
+    } catch (error) {
+
+      console.error(error);
+
+      operatorsList.innerHTML = `
+
+        <p
+          class="border border-danger-500/40 bg-danger-500/10 p-3 font-mono text-[11px] uppercase tracking-wider text-danger-500 sm:col-span-2"
+        >
+          No se pudieron cargar los operadores.
+        </p>
+
+      `;
+
+    }
+
+  }
+
+
+  function renderMembers() {
+
+    if (!operatorsList) return;
+
+
+    const query =
+      operatorSearch?.value
+        .trim()
+        .toLowerCase() ?? '';
+
+
+    const filtered =
+      members.filter((m) =>
+
+        [
+          m.full_name ?? '',
+          m.callsign ?? '',
+          m.rank?.name ?? '',
+        ]
+          .join(' ')
+          .toLowerCase()
+          .includes(query)
+
+      );
+
+
+    if (filtered.length === 0) {
+
+      operatorsList.innerHTML = `
+
+        <p
+          class="p-3 font-mono text-[11px] uppercase tracking-wider text-silver-300 sm:col-span-2"
+        >
+          No se encontraron operadores.
+        </p>
+
+      `;
+
+      return;
+
+    }
+
+
+    operatorsList.innerHTML =
+      filtered
+
+        .map((m) => {
+
+          const isSelf =
+            m.id === selfId;
+
+          const name =
+            escapeHtml(
+              m.full_name ?? 'Sin nombre'
+            );
+
+          const callsign =
+            escapeHtml(
+              m.callsign ?? 'SIN CALLSIGN'
+            );
+
+          const rank =
+            m.rank?.name
+              ? ` · ${escapeHtml(m.rank.name)}`
+              : '';
+
+          const initial =
+            escapeHtml(
+              (m.full_name ?? '?')
+                .slice(0, 1)
+                .toUpperCase()
+            );
+
+
+          // Las fotos privadas se muestran como iniciales
+
+          const avatar =
+            m.photo_url &&
+            /^https?:\/\//.test(m.photo_url)
+
+              ? `
+                <img
+                  src="${escapeHtml(m.photo_url)}"
+                  alt=""
+                  class="h-10 w-10 shrink-0 border border-base-600 object-cover"
                 />
+              `
 
-                ${
-                  member.photo_url
-                    ? `
-                      <img
-                        src="${member.photo_url}"
-                        alt=""
-                        class="h-10 w-10 rounded-full object-cover"
-                      />
-                    `
-                    : `
-                      <div class="flex h-10 w-10 items-center justify-center rounded-full border border-base-600 bg-base-800 font-mono text-xs text-gold-500">
-                        ${(member.full_name ?? '?').slice(0, 1)}
-                      </div>
-                    `
-                }
+              : `
+                <div
+                  class="flex h-10 w-10 shrink-0 items-center justify-center border border-base-600 bg-base-800 font-display text-lg text-gold-500"
+                >
+                  ${initial}
+                </div>
+              `;
+
+
+          return `
+
+            <label class="block cursor-pointer">
+
+              <input
+                type="checkbox"
+                value="${escapeHtml(m.id)}"
+                class="operator-checkbox op-input sr-only"
+                ${selected.has(m.id) ? 'checked' : ''}
+                ${isSelf ? 'disabled' : ''}
+              />
+
+              <div class="op-card">
+
+                <span
+                  class="op-check"
+                  aria-hidden="true"
+                >
+                  ✓
+                </span>
+
+                ${avatar}
 
                 <div class="min-w-0">
 
-                  <p class="truncate text-sm text-bone-100">
-                    ${member.full_name ?? 'Sin nombre'}
+                  <p
+                    class="truncate font-display text-sm font-semibold uppercase tracking-wide text-bone-100"
+                  >
+                    ${name}
                   </p>
 
-                  <p class="font-mono text-xs text-silver-500">
-                    ${member.callsign ?? 'SIN CALLSIGN'}
-                    ${
-                      member.rank?.name
-                        ? ` · ${member.rank.name}`
+                  <p
+                    class="truncate font-mono text-[10px] uppercase tracking-wider text-silver-300"
+                  >
+                    ${callsign}${rank}${
+                      isSelf
+                        ? ' · <span class="text-gold-500">Alpha</span>'
                         : ''
                     }
                   </p>
 
                 </div>
 
-              </label>
-            `;
-          })
-          .join('');
-    }
+              </div>
 
-    operatorSearch?.addEventListener(
-      'input',
-      renderMembers
-    );
+            </label>
+
+          `;
+
+        })
+
+        .join('');
+
+  }
 
 
-    // =========================================================
-    // HELPERS DINÁMICOS
-    // =========================================================
+  operatorsList?.addEventListener(
+    'change',
+    (event) => {
 
-    function emptyMessage(
-      container: HTMLElement,
-      message: string
-    ) {
+      const checkbox =
+        event.target as HTMLInputElement;
+
+
       if (
-        container.children.length === 0
+        !checkbox.classList.contains(
+          'operator-checkbox'
+        )
       ) {
-        container.innerHTML = `
-          <p class="text-sm text-silver-500">
-            ${message}
-          </p>
-        `;
+        return;
       }
-    }
 
-    function removeEmptyMessage(
-      container: HTMLElement
-    ) {
-      const message =
-        container.querySelector(
-          ':scope > p.text-silver-500'
+
+      if (checkbox.checked) {
+
+        selected.add(
+          checkbox.value
         );
 
-      message?.remove();
+      } else {
+
+        selected.delete(
+          checkbox.value
+        );
+
+      }
+
+
+      if (operatorsCount) {
+
+        operatorsCount.textContent =
+          `${selected.size} ${
+            selected.size === 1
+              ? 'seleccionado'
+              : 'seleccionados'
+          }`;
+
+      }
+
+
+      updateSummary();
+
     }
+  );
 
 
-    // =========================================================
-    // SOSPECHOSOS
-    // =========================================================
+  operatorSearch?.addEventListener(
+    'input',
+    renderMembers
+  );
 
-    document
-      .querySelector<HTMLButtonElement>(
-        '#add-suspect'
-      )
-      ?.addEventListener(
-        'click',
+
+  // ---------------------------------------------------------
+  // RIESGO, CONTADOR Y RESUMEN
+  // ---------------------------------------------------------
+
+  let riskText = '';
+
+
+  document
+    .querySelectorAll<HTMLInputElement>(
+      'input[name="riskLevel"]'
+    )
+    .forEach((input) => {
+
+      input.addEventListener(
+        'change',
         () => {
 
-          if (!suspectsContainer)
-            return;
+          riskText =
+            input.value;
 
-          removeEmptyMessage(
-            suspectsContainer
+          riskGroup?.removeAttribute(
+            'aria-invalid'
           );
 
-          const row =
-            document.createElement(
-              'div'
-            );
 
-          row.className =
-            'grid gap-3 border border-base-600 bg-base-950 p-4 md:grid-cols-[1fr_1fr_auto]';
+          if (riskPreview) {
 
-          row.innerHTML = `
+            riskPreview.textContent =
+              input.value;
 
-            <input
-              type="text"
-              data-identification
-              placeholder="Identificación"
-              class="w-full border border-base-600 bg-base-900 px-4 py-3 text-sm text-bone-100 outline-none placeholder:text-silver-500 focus:border-gold-500"
-            />
+            riskPreview.className =
+              `font-mono text-[10px] uppercase tracking-wider ${
+                input.dataset.tone ?? ''
+              }`;
 
-            <input
-              type="text"
-              data-confiscated
-              placeholder="Objetos incautados"
-              class="w-full border border-base-600 bg-base-900 px-4 py-3 text-sm text-bone-100 outline-none placeholder:text-silver-500 focus:border-gold-500"
-            />
+          }
 
-            <button
-              type="button"
-              data-remove
-              class="border border-base-600 px-4 py-2 font-mono text-xs uppercase text-silver-400 hover:border-danger-500 hover:text-danger-500"
-            >
-              Eliminar
-            </button>
 
-          `;
+          updateSummary();
 
-          row
-            .querySelector<HTMLButtonElement>(
-              '[data-remove]'
-            )
-            ?.addEventListener(
-              'click',
-              () => {
-                row.remove();
-
-                emptyMessage(
-                  suspectsContainer,
-                  'No se agregaron sospechosos.'
-                );
-              }
-            );
-
-          suspectsContainer.appendChild(
-            row
-          );
         }
       );
 
+    });
 
-    // =========================================================
-    // VEHÍCULOS
-    // =========================================================
 
-    document
-      .querySelector<HTMLButtonElement>(
-        '#add-vehicle'
-      )
-      ?.addEventListener(
-        'click',
-        () => {
+  description?.addEventListener(
+    'input',
+    () => {
 
-          if (!vehiclesContainer)
-            return;
+      if (descriptionCount) {
 
-          removeEmptyMessage(
-            vehiclesContainer
+        descriptionCount.textContent =
+          `${description.value.length} / 5000`;
+
+      }
+
+    }
+  );
+
+
+  function updateSummary() {
+
+    if (!summary) return;
+
+
+    const count =
+      (name: string) =>
+        rowsOf(name).length;
+
+
+    summary.textContent = [
+
+      `Riesgo ${riskText || '—'}`,
+
+      `${selected.size} ${
+        selected.size === 1
+          ? 'operador'
+          : 'operadores'
+      }`,
+
+      `${count('suspects')} sospechosos`,
+
+      `${count('vehicles')} vehículos`,
+
+    ].join(' · ');
+
+  }
+
+
+  // ---------------------------------------------------------
+  // ENVÍO
+  // ---------------------------------------------------------
+
+  function showError(message: string) {
+
+    if (!errorBox) return;
+
+    errorBox.textContent =
+      message;
+
+    errorBox.hidden =
+      false;
+
+  }
+
+
+  form?.addEventListener(
+    'submit',
+    async (event) => {
+
+      event.preventDefault();
+
+
+      if (!submitButton) return;
+
+
+      if (errorBox) {
+
+        errorBox.hidden =
+          true;
+
+      }
+
+
+      submitButton.disabled =
+        true;
+
+      submitButton.textContent =
+        'Creando...';
+
+
+      try {
+
+        const titleInput =
+          $<HTMLInputElement>(
+            '#title'
           );
 
-          const row =
-            document.createElement(
-              'div'
-            );
-
-          row.className =
-            'flex gap-3 border border-base-600 bg-base-950 p-4';
-
-          row.innerHTML = `
-
-            <input
-              type="text"
-              data-description
-              placeholder="Ej. Dodge Charger negro - B32"
-              class="min-w-0 flex-1 border border-base-600 bg-base-900 px-4 py-3 text-sm text-bone-100 outline-none placeholder:text-silver-500 focus:border-gold-500"
-            />
-
-            <button
-              type="button"
-              data-remove
-              class="border border-base-600 px-4 py-2 font-mono text-xs uppercase text-silver-400 hover:border-danger-500 hover:text-danger-500"
-            >
-              Eliminar
-            </button>
-
-          `;
-
-          row
-            .querySelector<HTMLButtonElement>(
-              '[data-remove]'
-            )
-            ?.addEventListener(
-              'click',
-              () => {
-                row.remove();
-
-                emptyMessage(
-                  vehiclesContainer,
-                  'No se agregaron vehículos.'
-                );
-              }
-            );
-
-          vehiclesContainer.appendChild(
-            row
+        const typeSelect =
+          $<HTMLSelectElement>(
+            '#type'
           );
+
+        const locationInput =
+          $<HTMLInputElement>(
+            '#location'
+          );
+
+
+        const title =
+          titleInput?.value.trim() ?? '';
+
+        const type =
+          typeSelect?.value.trim() ?? '';
+
+        const location =
+          locationInput?.value.trim() ?? '';
+
+
+        const riskLevel =
+          $<HTMLInputElement>(
+            'input[name="riskLevel"]:checked'
+          )?.value ?? '';
+
+
+        if (!title) {
+
+          throw new FieldError(
+            'Ingresá un título.',
+            titleInput
+          );
+
         }
-      );
 
 
-    // =========================================================
-    // EQUIPMENT
-    // =========================================================
+        if (!type) {
 
-    document
-      .querySelector<HTMLButtonElement>(
-        '#add-equipment'
-      )
-      ?.addEventListener(
-        'click',
-        () => {
-
-          if (!equipmentContainer)
-            return;
-
-          removeEmptyMessage(
-            equipmentContainer
+          throw new FieldError(
+            'Seleccioná un tipo de despliegue.',
+            typeSelect
           );
 
-          const row =
-            document.createElement(
-              'div'
-            );
-
-          row.className =
-            'flex gap-3 border border-base-600 bg-base-950 p-4';
-
-          row.innerHTML = `
-
-            <input
-              type="text"
-              data-description
-              placeholder="Ej. Escudo balístico, rifle, dron..."
-              class="min-w-0 flex-1 border border-base-600 bg-base-900 px-4 py-3 text-sm text-bone-100 outline-none placeholder:text-silver-500 focus:border-gold-500"
-            />
-
-            <button
-              type="button"
-              data-remove
-              class="border border-base-600 px-4 py-2 font-mono text-xs uppercase text-silver-400 hover:border-danger-500 hover:text-danger-500"
-            >
-              Eliminar
-            </button>
-
-          `;
-
-          row
-            .querySelector<HTMLButtonElement>(
-              '[data-remove]'
-            )
-            ?.addEventListener(
-              'click',
-              () => {
-                row.remove();
-
-                emptyMessage(
-                  equipmentContainer,
-                  'No se agregó material.'
-                );
-              }
-            );
-
-          equipmentContainer.appendChild(
-            row
-          );
         }
-      );
 
 
-    // =========================================================
-    // GRABACIONES
-    // =========================================================
+        if (!location) {
 
-    document
-      .querySelector<HTMLButtonElement>(
-        '#add-recording'
-      )
-      ?.addEventListener(
-        'click',
-        () => {
-
-          if (!recordingsContainer)
-            return;
-
-          removeEmptyMessage(
-            recordingsContainer
+          throw new FieldError(
+            'Ingresá una ubicación.',
+            locationInput
           );
 
-          const row =
-            document.createElement(
-              'div'
-            );
-
-          row.className =
-            'flex gap-3 border border-base-600 bg-base-950 p-4';
-
-          row.innerHTML = `
-
-            <input
-              type="url"
-              data-url
-              placeholder="https://..."
-              class="min-w-0 flex-1 border border-base-600 bg-base-900 px-4 py-3 text-sm text-bone-100 outline-none placeholder:text-silver-500 focus:border-gold-500"
-            />
-
-            <button
-              type="button"
-              data-remove
-              class="border border-base-600 px-4 py-2 font-mono text-xs uppercase text-silver-400 hover:border-danger-500 hover:text-danger-500"
-            >
-              Eliminar
-            </button>
-
-          `;
-
-          row
-            .querySelector<HTMLButtonElement>(
-              '[data-remove]'
-            )
-            ?.addEventListener(
-              'click',
-              () => {
-                row.remove();
-
-                emptyMessage(
-                  recordingsContainer,
-                  'No se agregaron grabaciones.'
-                );
-              }
-            );
-
-          recordingsContainer.appendChild(
-            row
-          );
         }
-      );
 
 
-    // =========================================================
-    // SUBMIT
-    // =========================================================
+        if (!riskLevel) {
 
-    form?.addEventListener(
-      'submit',
-      async (event) => {
+          throw new FieldError(
+            'Seleccioná un nivel de riesgo.',
+            riskGroup
+          );
 
-        event.preventDefault();
+        }
 
-        if (!submitButton)
-          return;
 
-        submitButton.disabled = true;
-        submitButton.textContent =
-          'CREANDO...';
+        const response =
+          await fetch(
+            '/api/despliegues',
+            {
+              method: 'POST',
+
+              headers: {
+                'Content-Type':
+                  'application/json',
+              },
+
+              credentials:
+                'same-origin',
+
+              body: JSON.stringify({
+
+                title,
+
+                type,
+
+                location,
+
+                riskLevel,
+
+                description:
+                  description?.value.trim()
+                  || null,
+
+                operators:
+                  Array.from(selected)
+                    .map(
+                      (memberId) => ({
+                        memberId,
+                      })
+                    ),
+
+                suspects:
+                  collect('suspects'),
+
+                vehicles:
+                  collect('vehicles'),
+
+                equipment:
+                  collect('equipment'),
+
+                recordings:
+                  collect('recordings'),
+
+              }),
+
+            }
+          );
+
+
+        const text =
+          await response.text();
+
+
+        let result: any = null;
+
 
         try {
 
-          const title =
-            document
-              .querySelector<HTMLInputElement>(
-                '#title'
-              )
-              ?.value
-              .trim() ?? '';
+          result =
+            JSON.parse(text);
 
-          const type =
-            document
-              .querySelector<HTMLSelectElement>(
-                '#type'
-              )
-              ?.value
-              .trim() ?? '';
+        } catch {
 
-          const location =
-            document
-              .querySelector<HTMLInputElement>(
-                '#location'
-              )
-              ?.value
-              .trim() ?? '';
-
-          const description =
-            document
-              .querySelector<HTMLTextAreaElement>(
-                '#description'
-              )
-              ?.value
-              .trim() ?? '';
-
-
-          // OPERADORES
-
-          const operatorCheckboxes =
-            Array.from(
-              document.querySelectorAll<HTMLInputElement>(
-                '.operator-checkbox:checked'
-              )
-            );
-
-          const operators =
-            operatorCheckboxes.map(
-              (checkbox) => ({
-                memberId: checkbox.value,
-              })
-            );
-
-
-          // SOSPECHOSOS
-
-          const suspects =
-            suspectsContainer
-              ? Array.from(
-                  suspectsContainer.querySelectorAll<HTMLElement>(
-                    '[data-identification]'
-                  )
-                )
-                  .map((element) => {
-
-                    const row =
-                      element.parentElement;
-
-                    const identification =
-                      (
-                        element as HTMLInputElement
-                      ).value.trim();
-
-                    const confiscatedItems =
-                      row?.querySelector<HTMLInputElement>(
-                        '[data-confiscated]'
-                      )?.value.trim() ?? '';
-
-                    return {
-                      identification,
-                      confiscatedItems,
-                    };
-                  })
-                  .filter(
-                    (suspect) =>
-                      suspect.identification ||
-                      suspect.confiscatedItems
-                  )
-              : [];
-
-
-          // VEHÍCULOS
-
-          const vehicles =
-            vehiclesContainer
-              ? Array.from(
-                  vehiclesContainer.querySelectorAll<HTMLInputElement>(
-                    '[data-description]'
-                  )
-                )
-                  .map((input) => ({
-                    description:
-                      input.value.trim(),
-                  }))
-                  .filter(
-                    (vehicle) =>
-                      vehicle.description
-                  )
-              : [];
-
-
-          // EQUIPO
-
-          const equipment =
-            equipmentContainer
-              ? Array.from(
-                  equipmentContainer.querySelectorAll<HTMLInputElement>(
-                    '[data-description]'
-                  )
-                )
-                  .map((input) => ({
-                    description:
-                      input.value.trim(),
-                  }))
-                  .filter(
-                    (item) =>
-                      item.description
-                  )
-              : [];
-
-
-          // GRABACIONES
-
-          const recordings =
-            recordingsContainer
-              ? Array.from(
-                  recordingsContainer.querySelectorAll<HTMLInputElement>(
-                    '[data-url]'
-                  )
-                )
-                  .map((input) => ({
-                    url:
-                      input.value.trim(),
-                  }))
-                  .filter(
-                    (recording) =>
-                      recording.url
-                  )
-              : [];
-
-
-          // VALIDACIÓN
-
-          if (!title) {
-            throw new Error(
-              'Ingresá un título.'
-            );
-          }
-
-          if (!type) {
-            throw new Error(
-              'Seleccioná un tipo de despliegue.'
-            );
-          }
-
-          if (!location) {
-            throw new Error(
-              'Ingresá una ubicación.'
-            );
-          }
-
-
-          // REQUEST
-
-          const response =
-            await fetch(
-              '/api/despliegues',
-              {
-                method: 'POST',
-
-                headers: {
-                  'Content-Type':
-                    'application/json',
-                },
-
-                credentials: 'same-origin',
-
-                body: JSON.stringify({
-                  title,
-                  type,
-                  location,
-                  description:
-                    description || null,
-                  operators,
-                  suspects,
-                  vehicles,
-                  equipment,
-                  recordings,
-                }),
-              }
-            );
-
-
-          // LEER RESPUESTA COMO TEXTO
-          // PARA EVITAR EL ERROR "<"
-
-          const responseText =
-            await response.text();
-
-          console.log(
-            'DEPLOYMENT RESPONSE:',
-            response.status,
-            responseText
+          throw new Error(
+            `El servidor devolvió una respuesta inválida (${response.status}).`
           );
 
-
-          let result: any = null;
-
-          try {
-            result =
-              JSON.parse(
-                responseText
-              );
-          } catch {
-            throw new Error(
-              `El servidor devolvió una respuesta inválida (${response.status}).`
-            );
-          }
-
-
-          if (
-            !response.ok ||
-            !result?.success
-          ) {
-            throw new Error(
-              result?.error ??
-              'No se pudo crear el despliegue.'
-            );
-          }
-
-
-          // ÉXITO
-
-          window.location.href =
-            `/despliegues/${result.id}`;
-
-        } catch (error) {
-
-          console.error(
-            'CREATE DEPLOYMENT ERROR:',
-            error
-          );
-
-          alert(
-            error instanceof Error
-              ? error.message
-              : 'Ocurrió un error al crear el despliegue.'
-          );
-
-          submitButton.disabled =
-            false;
-
-          submitButton.textContent =
-            'CREAR DESPLIEGUE';
         }
+
+
+        if (
+          !response.ok ||
+          !result?.success
+        ) {
+
+          throw new Error(
+            result?.error ??
+              'No se pudo crear el despliegue.'
+          );
+
+        }
+
+
+        dirty = false;
+
+
+        window.location.href =
+          `/despliegues/${result.id}`;
+
+      } catch (error) {
+
+        console.error(
+          'CREATE DEPLOYMENT ERROR:',
+          error
+        );
+
+
+        showError(
+          error instanceof Error
+            ? error.message
+            : 'Ocurrió un error al crear el despliegue.'
+        );
+
+
+        if (
+          error instanceof FieldError &&
+          error.target
+        ) {
+
+          error.target.setAttribute(
+            'aria-invalid',
+            'true'
+          );
+
+
+          error.target.scrollIntoView({
+            block: 'center',
+            behavior: 'smooth',
+          });
+
+
+          error.target.focus({
+            preventScroll: true,
+          });
+
+        } else {
+
+          errorBox?.scrollIntoView({
+            block: 'center',
+            behavior: 'smooth',
+          });
+
+        }
+
+
+        submitButton.disabled =
+          false;
+
+        submitButton.textContent =
+          'Crear despliegue';
+
       }
-    );
+
+    }
+  );
 
 
-    // =========================================================
-    // INICIALIZAR
-    // =========================================================
+  updateSummary();
 
-    loadMembers();
-  </script>
-</OperatorLayout>
+  loadMembers();
+
+</script>
