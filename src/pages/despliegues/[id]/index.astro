@@ -1,13 +1,10 @@
 ---
-import OperatorLayout from '../../../layouts/OperatorLayout.astro';
-import { getCurrentMember } from '../../../lib/auth';
+import CommandLayout from '../../../layouts/CommandLayout.astro';
+import {
+  getCurrentMember,
+  hasPermission,
+} from '../../../lib/auth';
 import { createApiClient } from '../../../lib/supabase-api';
-
-const { id } = Astro.params;
-
-if (!id) {
-  return Astro.redirect('/despliegues');
-}
 
 const { member, permissions } =
   await getCurrentMember(Astro);
@@ -16,15 +13,23 @@ if (!member) {
   return Astro.redirect('/login');
 }
 
-const supabase = createApiClient(Astro.request, Astro.cookies);
+if (!hasPermission(permissions, 'admin.access')) {
+  return Astro.redirect('/panel');
+}
 
-const isLeader =
-  permissions.includes('admin.access');
+const deploymentId = Number(Astro.params.id);
 
+if (
+  !Number.isInteger(deploymentId) ||
+  deploymentId <= 0
+) {
+  return Astro.redirect('/panel');
+}
 
-// =====================================================
-// DESPLIEGUE
-// =====================================================
+const supabase = createApiClient(
+  Astro.request,
+  Astro.cookies
+);
 
 const {
   data: deployment,
@@ -32,48 +37,24 @@ const {
 } = await supabase
   .from('deployments')
   .select(`
-    id,
-    code,
-    title,
-    type,
-    location,
-    status,
-    report_status,
-    description,
-    created_at,
-    updated_at,
-    created_by,
-    reviewed_by,
-    reviewed_at,
-
-    members:created_by (
+    *,
+    creator:members!deployments_created_by_fkey (
       id,
       full_name,
-      callsign,
-      photo_url,
-      rank_id
+      callsign
     )
   `)
-  .eq('id', id)
+  .eq('id', deploymentId)
   .single();
-
 
 if (deploymentError || !deployment) {
   console.error(
-    'DEPLOYMENT DETAIL ERROR:',
+    'ERROR OBTENIENDO DESPLIEGUE:',
     deploymentError
   );
 
-  return Astro.redirect('/despliegues');
+  return Astro.redirect('/panel');
 }
-
-
-const currentDeployment = deployment;
-
-
-// =====================================================
-// PARTICIPANTES
-// =====================================================
 
 const {
   data: participants,
@@ -83,1109 +64,979 @@ const {
   .select(`
     id,
     role,
-    member_id,
-    members (
+    member:members (
       id,
       full_name,
       callsign,
       photo_url,
-      rank_id
+      rank_id,
+      ranks (
+        id,
+        name,
+        level,
+        insignia_url
+      )
     )
   `)
-  .eq('deployment_id', currentDeployment.id)
-  .order('role', {
-    ascending: true,
-  });
-
+  .eq('deployment_id', deploymentId)
+  .order('role', { ascending: true });
 
 if (participantsError) {
   console.error(
-    'PARTICIPANTS ERROR:',
+    'ERROR OBTENIENDO PARTICIPANTES:',
     participantsError
   );
 }
 
+const { data: suspects } =
+  await supabase
+    .from('deployment_suspects')
+    .select('*')
+    .eq('deployment_id', deploymentId)
+    .order('id', { ascending: true });
 
-// =====================================================
-// SOSPECHOSOS
-// =====================================================
+const { data: vehicles } =
+  await supabase
+    .from('deployment_vehicles')
+    .select('*')
+    .eq('deployment_id', deploymentId)
+    .order('id', { ascending: true });
 
-const {
-  data: suspects,
-  error: suspectsError,
-} = await supabase
-  .from('deployment_suspects')
-  .select(`
-    id,
-    identification,
-    confiscated_items,
-    status,
-    notes,
-    created_at
-  `)
-  .eq('deployment_id', currentDeployment.id)
-  .order('id', {
-    ascending: true,
-  });
+const { data: equipment } =
+  await supabase
+    .from('deployment_equipment')
+    .select('*')
+    .eq('deployment_id', deploymentId)
+    .order('id', { ascending: true });
 
-
-if (suspectsError) {
-  console.error(
-    'SUSPECTS ERROR:',
-    suspectsError
-  );
-}
-
-
-// =====================================================
-// VEHÍCULOS
-// =====================================================
-
-const {
-  data: vehicles,
-  error: vehiclesError,
-} = await supabase
-  .from('deployment_vehicles')
-  .select(`
-    id,
-    description,
-    created_at
-  `)
-  .eq('deployment_id', currentDeployment.id)
-  .order('id', {
-    ascending: true,
-  });
-
-
-if (vehiclesError) {
-  console.error(
-    'VEHICLES ERROR:',
-    vehiclesError
-  );
-}
-
-
-// =====================================================
-// EQUIPAMIENTO
-// =====================================================
-
-const {
-  data: equipment,
-  error: equipmentError,
-} = await supabase
-  .from('deployment_equipment')
-  .select(`
-    id,
-    description,
-    created_at
-  `)
-  .eq('deployment_id', currentDeployment.id)
-  .order('id', {
-    ascending: true,
-  });
-
-
-if (equipmentError) {
-  console.error(
-    'EQUIPMENT ERROR:',
-    equipmentError
-  );
-}
-
-
-// =====================================================
-// GRABACIONES
-// =====================================================
-
-const {
-  data: recordings,
-  error: recordingsError,
-} = await supabase
-  .from('deployment_recordings')
-  .select(`
-    id,
-    url,
-    created_at
-  `)
-  .eq('deployment_id', currentDeployment.id)
-  .order('id', {
-    ascending: true,
-  });
-
-
-if (recordingsError) {
-  console.error(
-    'RECORDINGS ERROR:',
-    recordingsError
-  );
-}
-
-
-// =====================================================
-// REVISOR
-// =====================================================
+const { data: recordings } =
+  await supabase
+    .from('deployment_recordings')
+    .select('*')
+    .eq('deployment_id', deploymentId)
+    .order('id', { ascending: true });
 
 let reviewer: {
+  id: string;
   full_name: string | null;
   callsign: string | null;
 } | null = null;
 
-
-if (currentDeployment.reviewed_by) {
-  const {
-    data: reviewerData,
-    error: reviewerError,
-  } = await supabase
-    .from('members')
-    .select(`
-      full_name,
-      callsign
-    `)
-    .eq(
-      'id',
-      currentDeployment.reviewed_by
-    )
-    .single();
-
-
-  if (reviewerError) {
-    console.error(
-      'REVIEWER ERROR:',
-      reviewerError
-    );
-  }
-
+if (deployment.reviewed_by) {
+  const { data: reviewerData } =
+    await supabase
+      .from('members')
+      .select(`
+        id,
+        full_name,
+        callsign
+      `)
+      .eq('id', deployment.reviewed_by)
+      .maybeSingle();
 
   reviewer = reviewerData;
 }
 
-
-// =====================================================
-// HELPERS
-// =====================================================
-
-const formatDate = (
-  value: string | null
-) => {
-  if (!value) return '—';
+function formatDate(
+  value: string | null | undefined
+) {
+  if (!value) {
+    return '—';
+  }
 
   return new Intl.DateTimeFormat(
     'es-PY',
     {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
+      dateStyle: 'medium',
+      timeStyle: 'short',
     }
   ).format(new Date(value));
-};
+}
 
+function riskClass(
+  risk: string | null | undefined
+) {
+  switch (risk) {
+    case 'Crítico':
+      return 'border-red-500/30 bg-red-500/10 text-red-300';
 
-const formatShortDate = (
-  value: string | null
-) => {
-  if (!value) return '—';
+    case 'Alto':
+      return 'border-orange-500/30 bg-orange-500/10 text-orange-300';
 
-  return new Intl.DateTimeFormat(
-    'es-PY',
-    {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    }
-  ).format(new Date(value));
-};
+    case 'Medio':
+      return 'border-yellow-500/30 bg-yellow-500/10 text-yellow-300';
 
+    case 'Bajo':
+      return 'border-green-500/30 bg-green-500/10 text-green-300';
 
-const getMemberName = (
+    default:
+      return 'border-base-600 bg-base-800 text-silver-300';
+  }
+}
+
+function getMemberRank(
   memberData: any
-) => {
-  if (!memberData) return 'Desconocido';
+) {
+  if (!memberData) {
+    return 'Sin rango';
+  }
 
-  return (
-    memberData.full_name ||
-    memberData.callsign ||
-    'Sin identificar'
-  );
-};
+  if (Array.isArray(memberData.ranks)) {
+    return memberData.ranks[0]?.name ?? 'Sin rango';
+  }
 
+  return memberData.ranks?.name ?? 'Sin rango';
+}
 
-const getCallsign = (
-  memberData: any
-) => {
-  if (!memberData) return '—';
+const alpha =
+  participants?.find(
+    (participant) =>
+      participant.role === 'alpha'
+  )?.member ?? null;
 
-  return memberData.callsign
-    ? memberData.callsign
-    : '—';
-};
-
+const operators =
+  participants?.filter(
+    (participant) =>
+      participant.role !== 'alpha'
+  ) ?? [];
 
 const isReviewed =
-  currentDeployment.report_status ===
-  'reviewed';
+  deployment.report_status === 'reviewed';
 
-const reportStatusLabel = isReviewed
-  ? 'REVISADO'
-  : 'EN ESPERA DE REVISIÓN';
-
-const reportStatusClass = isReviewed
-  ? 'border-green-500/30 bg-green-500/10 text-green-400'
-  : 'border-gold-500/30 bg-gold-500/10 text-gold-400';
+const isPending =
+  deployment.report_status === 'pending_review';
 ---
 
-<OperatorLayout
-  title={currentDeployment.title}
-  active="operaciones"
+<CommandLayout
+  title={`${deployment.code} | Despliegue | SRT`}
 >
+  <div class="mx-auto max-w-7xl space-y-6">
 
-  <div class="space-y-6">
-
-    <!-- ================================================= -->
     <!-- HEADER -->
-    <!-- ================================================= -->
 
     <section
-      class="relative overflow-hidden border border-base-600 bg-base-900"
+      class="border border-base-600/70 bg-base-900"
     >
-
-      <div class="absolute inset-0 tac-grid opacity-30"></div>
-
-      <div class="relative p-6 md:p-8">
-
-        <!-- Breadcrumb -->
-
+      <div
+        class="border-b border-base-600/60 px-6 py-6 lg:px-8"
+      >
         <div
-          class="mb-6 flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.2em] text-silver-500"
-        >
-          <a
-            href="/despliegues"
-            class="transition hover:text-gold-500"
-          >
-            DESPLIEGUES
-          </a>
-
-          <span>/</span>
-
-          <span>
-            {currentDeployment.code}
-          </span>
-        </div>
-
-
-        <!-- Title -->
-
-        <div
-          class="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between"
+          class="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between"
         >
 
           <div>
-
             <div
-              class="mb-3 flex flex-wrap items-center gap-3"
+              class="mb-3 flex flex-wrap items-center gap-2"
             >
-
               <span
-                class="border border-green-500/30 bg-green-500/10 px-3 py-1 text-[10px] font-mono font-bold tracking-[0.15em] text-green-400"
+                class="border border-base-600 bg-base-800 px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-gold-500"
               >
-                OPERACIÓN COMPLETADA
+                {deployment.code}
               </span>
 
               <span
-                class={`border px-3 py-1 text-[10px] font-mono font-bold tracking-[0.15em] ${reportStatusClass}`}
+                class={`border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.15em] ${riskClass(deployment.risk_level)}`}
               >
-                {reportStatusLabel}
+                Riesgo {deployment.risk_level}
               </span>
-
-            </div>
-
-
-            <h1
-              class="font-display text-3xl font-black uppercase tracking-tight text-bone-100 md:text-5xl"
-            >
-              {currentDeployment.title}
-            </h1>
-
-
-            <div
-              class="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-mono text-silver-400"
-            >
-
-              <span>
-                {currentDeployment.code}
-              </span>
-
-              <span class="text-base-600">
-                //
-              </span>
-
-              <span>
-                {currentDeployment.type}
-              </span>
-
-              <span class="text-base-600">
-                //
-              </span>
-
-              <span>
-                {currentDeployment.location}
-              </span>
-
-            </div>
-
-          </div>
-
-
-          <!-- Review action -->
-
-          {
-            !isReviewed && isLeader && (
-              <button
-                id="review-button"
-                type="button"
-                class="group flex shrink-0 items-center justify-center gap-3 border border-gold-500 bg-gold-500 px-5 py-3 text-xs font-black tracking-[0.12em] text-base-950 transition hover:bg-gold-400"
-              >
-
-                <span>
-                  ✓
-                </span>
-
-                <span>
-                  MARCAR COMO REVISADO
-                </span>
-
-              </button>
-            )
-          }
-
-        </div>
-
-      </div>
-
-    </section>
-
-
-    <!-- ================================================= -->
-    <!-- META -->
-    <!-- ================================================= -->
-
-    <section
-      class="grid grid-cols-1 gap-px border border-base-600 bg-base-600 sm:grid-cols-2 lg:grid-cols-4"
-    >
-
-      <!-- CREATED -->
-
-      <div class="bg-base-900 p-5">
-
-        <div
-          class="mb-2 text-[9px] font-mono font-bold tracking-[0.2em] text-silver-500"
-        >
-          INFORME CREADO
-        </div>
-
-        <div
-          class="font-mono text-sm font-bold text-bone-100"
-        >
-          {formatShortDate(
-            currentDeployment.created_at
-          )}
-        </div>
-
-        <div
-          class="mt-1 text-[10px] font-mono text-silver-500"
-        >
-          {formatDate(
-            currentDeployment.created_at
-          )}
-        </div>
-
-      </div>
-
-
-      <!-- ALPHA -->
-
-      <div class="bg-base-900 p-5">
-
-        <div
-          class="mb-2 text-[9px] font-mono font-bold tracking-[0.2em] text-silver-500"
-        >
-          ALPHA RESPONSABLE
-        </div>
-
-        <div
-          class="font-mono text-sm font-bold text-bone-100"
-        >
-          {getCallsign(
-            currentDeployment.members
-          )}
-        </div>
-
-        <div
-          class="mt-1 truncate text-[10px] font-mono text-silver-500"
-        >
-          {getMemberName(
-            currentDeployment.members
-          )}
-        </div>
-
-      </div>
-
-
-      <!-- LOCATION -->
-
-      <div class="bg-base-900 p-5">
-
-        <div
-          class="mb-2 text-[9px] font-mono font-bold tracking-[0.2em] text-silver-500"
-        >
-          UBICACIÓN
-        </div>
-
-        <div
-          class="truncate font-mono text-sm font-bold uppercase text-bone-100"
-        >
-          {currentDeployment.location}
-        </div>
-
-      </div>
-
-
-      <!-- REPORT -->
-
-      <div class="bg-base-900 p-5">
-
-        <div
-          class="mb-2 text-[9px] font-mono font-bold tracking-[0.2em] text-silver-500"
-        >
-          ESTADO DEL INFORME
-        </div>
-
-        <div
-          class={`font-mono text-sm font-bold ${
-            isReviewed
-              ? 'text-green-400'
-              : 'text-gold-400'
-          }`}
-        >
-          {reportStatusLabel}
-        </div>
-
-        {
-          isReviewed && currentDeployment.reviewed_at && (
-            <div
-              class="mt-1 text-[10px] font-mono text-silver-500"
-            >
-              {formatDate(
-                currentDeployment.reviewed_at
-              )}
-            </div>
-          )
-        }
-
-      </div>
-
-    </section>
-
-
-    <!-- ================================================= -->
-    <!-- REVISIÓN -->
-    <!-- ================================================= -->
-
-    {
-      isReviewed && (
-        <section
-          class="border border-green-500/20 bg-green-500/5"
-        >
-
-          <div class="p-5">
-
-            <div
-              class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
-            >
-
-              <div>
-
-                <div
-                  class="text-[9px] font-mono font-bold tracking-[0.2em] text-green-400"
-                >
-                  ✓ INFORME REVISADO
-                </div>
-
-                <div
-                  class="mt-2 font-display text-lg font-bold uppercase text-bone-100"
-                >
-                  Este despliegue fue validado por un líder.
-                </div>
-
-              </div>
-
 
               {
-                reviewer && (
-                  <div
-                    class="text-left sm:text-right"
-                  >
-
-                    <div
-                      class="text-[9px] font-mono tracking-[0.15em] text-silver-500"
-                    >
-                      REVISADO POR
-                    </div>
-
-                    <div
-                      class="mt-1 font-mono text-sm font-bold text-bone-100"
-                    >
-                      {reviewer.callsign
-                        ? `${reviewer.callsign} — `
-                        : ''}
-                      {reviewer.full_name ||
-                        'Líder SRT'}
-                    </div>
-
-                    {
-                      currentDeployment.reviewed_at && (
-                        <div
-                          class="mt-1 text-[10px] font-mono text-silver-500"
-                        >
-                          {formatDate(
-                            currentDeployment.reviewed_at
-                          )}
-                        </div>
-                      )
-                    }
-
-                  </div>
+                isReviewed && (
+                  <span class="border border-green-500/30 bg-green-500/10 px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-green-300">
+                    REVISADO
+                  </span>
                 )
               }
 
+              {
+                isPending && (
+                  <span class="border border-yellow-500/30 bg-yellow-500/10 px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-yellow-300">
+                    EN ESPERA DE REVISIÓN
+                  </span>
+                )
+              }
             </div>
 
+            <h1
+              class="font-display text-2xl font-black uppercase tracking-wide text-bone-100 lg:text-3xl"
+            >
+              {deployment.title}
+            </h1>
+
+            <p
+              class="mt-2 font-mono text-xs uppercase tracking-wider text-silver-300"
+            >
+              {deployment.type}
+              <span class="mx-2 text-base-600">/</span>
+              {deployment.location}
+            </p>
           </div>
 
-        </section>
-      )
-    }
+          <div
+            class="text-left lg:text-right"
+          >
+            <p
+              class="font-mono text-[10px] uppercase tracking-[0.2em] text-silver-400"
+            >
+              Registrado
+            </p>
 
+            <p
+              class="mt-1 font-mono text-sm text-bone-100"
+            >
+              {formatDate(deployment.created_at)}
+            </p>
 
-    <!-- ================================================= -->
-    <!-- RESUMEN -->
-    <!-- ================================================= -->
+            <p
+              class="mt-2 font-mono text-[10px] uppercase tracking-[0.2em] text-silver-400"
+            >
+              Alpha
+            </p>
 
-    <section
-      class="border border-base-600 bg-base-900"
-    >
+            <p
+              class="mt-1 font-mono text-sm text-gold-500"
+            >
+              [{deployment.creator?.callsign ?? '—'}]
+              {deployment.creator?.full_name ?? '—'}
+            </p>
+          </div>
 
-      <div
-        class="border-b border-base-600 px-5 py-4"
-      >
-
-        <div
-          class="text-[10px] font-mono font-bold tracking-[0.2em] text-gold-500"
-        >
-          01 // RESUMEN GENERAL
         </div>
-
       </div>
 
+      {
+        isReviewed && (
+          <div class="border-t border-green-500/20 bg-green-500/5 px-6 py-4 lg:px-8">
+            <div class="flex flex-col gap-1 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p class="font-mono text-xs font-bold uppercase tracking-[0.15em] text-green-300">
+                  Informe revisado
+                </p>
 
-      <div class="p-5 md:p-6">
+                <p class="mt-1 font-mono text-[11px] uppercase text-silver-400">
+                  Revisado por [{reviewer?.callsign ?? '—'}]
+                  {reviewer?.full_name ?? '—'}
+                </p>
+              </div>
+
+              <p class="font-mono text-[11px] text-silver-400">
+                {formatDate(deployment.reviewed_at)}
+              </p>
+            </div>
+          </div>
+        )
+      }
+    </section>
+
+
+    <!-- INFORMACIÓN -->
+
+    <section
+      class="border border-base-600/70 bg-base-900"
+    >
+      <div
+        class="border-b border-base-600/60 px-6 py-4"
+      >
+        <p
+          class="font-mono text-[10px] font-bold uppercase tracking-[0.25em] text-gold-500"
+        >
+          01 / Información del despliegue
+        </p>
+      </div>
+
+      <div
+        class="grid gap-px bg-base-600/40 sm:grid-cols-2 lg:grid-cols-4"
+      >
+        <div class="bg-base-900 p-5">
+          <p class="font-mono text-[10px] uppercase tracking-wider text-silver-400">
+            Código
+          </p>
+
+          <p class="mt-2 font-mono text-lg font-bold text-bone-100">
+            {deployment.code}
+          </p>
+        </div>
+
+        <div class="bg-base-900 p-5">
+          <p class="font-mono text-[10px] uppercase tracking-wider text-silver-400">
+            Tipo
+          </p>
+
+          <p class="mt-2 font-mono text-sm font-bold uppercase text-bone-100">
+            {deployment.type}
+          </p>
+        </div>
+
+        <div class="bg-base-900 p-5">
+          <p class="font-mono text-[10px] uppercase tracking-wider text-silver-400">
+            Ubicación
+          </p>
+
+          <p class="mt-2 font-mono text-sm font-bold uppercase text-bone-100">
+            {deployment.location}
+          </p>
+        </div>
+
+        <div class="bg-base-900 p-5">
+          <p class="font-mono text-[10px] uppercase tracking-wider text-silver-400">
+            Riesgo
+          </p>
+
+          <p class="mt-2 font-mono text-sm font-bold uppercase text-bone-100">
+            {deployment.risk_level}
+          </p>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- DESCRIPCIÓN -->
+
+    <section
+      class="border border-base-600/70 bg-base-900"
+    >
+      <div
+        class="border-b border-base-600/60 px-6 py-4"
+      >
+        <p
+          class="font-mono text-[10px] font-bold uppercase tracking-[0.25em] text-gold-500"
+        >
+          02 / Descripción de la situación
+        </p>
+      </div>
+
+      <div class="p-6 lg:p-8">
+        <p
+          class="whitespace-pre-wrap font-mono text-sm leading-7 text-silver-200"
+        >
+          {deployment.description || 'Sin descripción registrada.'}
+        </p>
+      </div>
+    </section>
+
+
+    <!-- PERSONAL -->
+
+    <section
+      class="border border-base-600/70 bg-base-900"
+    >
+      <div
+        class="border-b border-base-600/60 px-6 py-4"
+      >
+        <p
+          class="font-mono text-[10px] font-bold uppercase tracking-[0.25em] text-gold-500"
+        >
+          03 / Personal desplegado
+        </p>
+      </div>
+
+      <div class="p-6 lg:p-8">
 
         {
-          currentDeployment.description ? (
-            <p
-              class="whitespace-pre-wrap text-sm leading-7 text-silver-300"
-            >
-              {currentDeployment.description}
-            </p>
-          ) : (
-            <div
-              class="text-xs font-mono text-silver-500"
-            >
-              SIN RESUMEN REGISTRADO.
+          alpha && (
+            <div class="mb-6 border border-gold-500/20 bg-gold-500/5 p-5">
+              <p class="font-mono text-[10px] uppercase tracking-[0.2em] text-gold-500">
+                Alpha / Líder del despliegue
+              </p>
+
+              <div class="mt-3 flex flex-wrap items-center gap-4">
+                <div>
+                  <p class="font-display text-lg font-bold uppercase text-bone-100">
+                    {alpha.full_name ?? 'Sin nombre'}
+                  </p>
+
+                  <p class="mt-1 font-mono text-xs uppercase text-silver-400">
+                    [{alpha.callsign ?? 'SIN PLACA'}]
+                    <span class="mx-2 text-base-600">/</span>
+                    {getMemberRank(alpha)}
+                  </p>
+                </div>
+              </div>
             </div>
           )
         }
 
-      </div>
+        <div>
+          <p class="mb-4 font-mono text-[10px] uppercase tracking-[0.2em] text-silver-400">
+            Operadores
+          </p>
 
-    </section>
-
-
-    <!-- ================================================= -->
-    <!-- PERSONAL -->
-    <!-- ================================================= -->
-
-    <section
-      class="border border-base-600 bg-base-900"
-    >
-
-      <div
-        class="border-b border-base-600 px-5 py-4"
-      >
-
-        <div
-          class="text-[10px] font-mono font-bold tracking-[0.2em] text-gold-500"
-        >
-          02 // PERSONAL PARTICIPANTE
-        </div>
-
-      </div>
-
-
-      <div class="p-5">
-
-        {
-          participants && participants.length > 0 ? (
-            <div
-              class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
-            >
-
-              {
-                participants.map((participant: any) => {
-
-                  const participantMember =
-                    Array.isArray(
-                      participant.members
-                    )
-                      ? participant.members[0]
-                      : participant.members;
-
-                  const isAlpha =
-                    participant.role === 'alpha';
+          {
+            operators.length > 0 ? (
+              <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {operators.map((participant) => {
+                  const operator = participant.member;
 
                   return (
-                    <div
-                      class={`border p-4 ${
-                        isAlpha
-                          ? 'border-gold-500/30 bg-gold-500/5'
-                          : 'border-base-600 bg-base-950'
-                      }`}
-                    >
+                    <div class="border border-base-600 bg-base-800 p-4">
+                      <p class="font-display text-sm font-bold uppercase text-bone-100">
+                        {operator?.full_name ?? 'Sin nombre'}
+                      </p>
 
-                      <div
-                        class="flex items-center justify-between gap-3"
-                      >
+                      <p class="mt-1 font-mono text-[11px] uppercase text-silver-400">
+                        [{operator?.callsign ?? 'SIN PLACA'}]
+                      </p>
 
-                        <div>
-
-                          <div
-                            class="font-mono text-sm font-bold text-bone-100"
-                          >
-                            {getCallsign(
-                              participantMember
-                            )}
-                          </div>
-
-                          <div
-                            class="mt-1 text-xs text-silver-400"
-                          >
-                            {getMemberName(
-                              participantMember
-                            )}
-                          </div>
-
-                        </div>
-
-
-                        <span
-                          class={`text-[9px] font-mono font-bold tracking-[0.15em] ${
-                            isAlpha
-                              ? 'text-gold-400'
-                              : 'text-silver-500'
-                          }`}
-                        >
-                          {isAlpha
-                            ? 'ALPHA'
-                            : 'OPERADOR'}
-                        </span>
-
-                      </div>
-
+                      <p class="mt-2 font-mono text-[10px] uppercase tracking-wider text-gold-500">
+                        {getMemberRank(operator)}
+                      </p>
                     </div>
                   );
-
-                })
-              }
-
-            </div>
-          ) : (
-            <div
-              class="text-xs font-mono text-silver-500"
-            >
-              SIN PERSONAL REGISTRADO.
-            </div>
-          )
-        }
-
-      </div>
-
-    </section>
-
-
-    <!-- ================================================= -->
-    <!-- SOSPECHOSOS -->
-    <!-- ================================================= -->
-
-    <section
-      class="border border-base-600 bg-base-900"
-    >
-
-      <div
-        class="border-b border-base-600 px-5 py-4"
-      >
-
-        <div
-          class="text-[10px] font-mono font-bold tracking-[0.2em] text-gold-500"
-        >
-          03 // SOSPECHOSOS
+                })}
+              </div>
+            ) : (
+              <p class="font-mono text-xs uppercase text-silver-500">
+                No se registraron operadores adicionales.
+              </p>
+            )
+          }
         </div>
 
       </div>
+    </section>
 
 
-      <div class="p-5">
+    <!-- SOSPECHOSOS -->
+
+    <section
+      class="border border-base-600/70 bg-base-900"
+    >
+      <div
+        class="border-b border-base-600/60 px-6 py-4"
+      >
+        <p
+          class="font-mono text-[10px] font-bold uppercase tracking-[0.25em] text-gold-500"
+        >
+          04 / Sospechosos
+        </p>
+      </div>
+
+      <div class="p-6 lg:p-8">
 
         {
           suspects && suspects.length > 0 ? (
             <div class="space-y-3">
+              {suspects.map((suspect) => (
+                <div class="border border-base-600 bg-base-800 p-5">
+                  <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <p class="font-display text-base font-bold uppercase text-bone-100">
+                        {suspect.name}
+                      </p>
 
-              {
-                suspects.map((suspect: any, index: number) => (
-                  <div
-                    class="border border-base-600 bg-base-950 p-4"
-                  >
-
-                    <div
-                      class="grid gap-4 md:grid-cols-2"
-                    >
-
-                      <div>
-
-                        <div
-                          class="mb-1 text-[9px] font-mono tracking-[0.15em] text-silver-500"
-                        >
-                          SOSPECHOSO #{index + 1}
-                        </div>
-
-                        <div
-                          class="font-mono text-sm font-bold text-bone-100"
-                        >
-                          {suspect.identification ||
-                            'SIN IDENTIFICACIÓN'}
-                        </div>
-
-                      </div>
-
-
-                      <div>
-
-                        <div
-                          class="mb-1 text-[9px] font-mono tracking-[0.15em] text-silver-500"
-                        >
-                          OBJETOS INCAUTADOS
-                        </div>
-
-                        <div
-                          class="whitespace-pre-wrap text-sm text-silver-300"
-                        >
-                          {suspect.confiscated_items ||
-                            'NINGUNO REGISTRADO'}
-                        </div>
-
-                      </div>
-
+                      {
+                        suspect.identification && (
+                          <p class="mt-1 font-mono text-xs uppercase text-silver-400">
+                            ID: {suspect.identification}
+                          </p>
+                        )
+                      }
                     </div>
 
+                    {
+                      suspect.status && (
+                        <span class="border border-base-600 bg-base-900 px-2 py-1 font-mono text-[10px] uppercase text-silver-300">
+                          {suspect.status}
+                        </span>
+                      )
+                    }
                   </div>
-                ))
-              }
 
+                  {
+                    suspect.notes && (
+                      <p class="mt-4 whitespace-pre-wrap font-mono text-xs leading-6 text-silver-300">
+                        {suspect.notes}
+                      </p>
+                    )
+                  }
+
+                  {
+                    suspect.confiscated_items && (
+                      <div class="mt-4 border-t border-base-600/50 pt-4">
+                        <p class="font-mono text-[10px] uppercase tracking-wider text-silver-500">
+                          Objetos confiscados
+                        </p>
+
+                        <p class="mt-1 whitespace-pre-wrap font-mono text-xs text-silver-300">
+                          {suspect.confiscated_items}
+                        </p>
+                      </div>
+                    )
+                  }
+                </div>
+              ))}
             </div>
           ) : (
-            <div
-              class="text-xs font-mono text-silver-500"
-            >
-              SIN SOSPECHOSOS REGISTRADOS.
-            </div>
+            <p class="font-mono text-xs uppercase text-silver-500">
+              No se registraron sospechosos.
+            </p>
           )
         }
 
       </div>
-
     </section>
 
 
-    <!-- ================================================= -->
-    <!-- VEHÍCULOS + EQUIPAMIENTO -->
-    <!-- ================================================= -->
+    <!-- VEHÍCULOS Y EQUIPAMIENTO -->
 
-    <div
+    <section
       class="grid gap-6 lg:grid-cols-2"
     >
 
-      <!-- VEHÍCULOS -->
-
-      <section
-        class="border border-base-600 bg-base-900"
+      <div
+        class="border border-base-600/70 bg-base-900"
       >
-
-        <div
-          class="border-b border-base-600 px-5 py-4"
-        >
-
-          <div
-            class="text-[10px] font-mono font-bold tracking-[0.2em] text-gold-500"
-          >
-            04 // VEHÍCULOS UTILIZADOS
-          </div>
-
+        <div class="border-b border-base-600/60 px-6 py-4">
+          <p class="font-mono text-[10px] font-bold uppercase tracking-[0.25em] text-gold-500">
+            05 / Vehículos
+          </p>
         </div>
 
-
-        <div class="p-5">
-
+        <div class="p-6">
           {
             vehicles && vehicles.length > 0 ? (
-              <div class="space-y-2">
-
-                {
-                  vehicles.map((vehicle: any) => (
-                    <div
-                      class="border border-base-600 bg-base-950 px-4 py-3 text-sm text-silver-300"
-                    >
+              <div class="space-y-3">
+                {vehicles.map((vehicle) => (
+                  <div class="border border-base-600 bg-base-800 p-4">
+                    <p class="whitespace-pre-wrap font-mono text-xs leading-6 text-silver-200">
                       {vehicle.description}
-                    </div>
-                  ))
-                }
-
+                    </p>
+                  </div>
+                ))}
               </div>
             ) : (
-              <div
-                class="text-xs font-mono text-silver-500"
-              >
-                SIN VEHÍCULOS REGISTRADOS.
-              </div>
+              <p class="font-mono text-xs uppercase text-silver-500">
+                No se registraron vehículos.
+              </p>
             )
           }
-
         </div>
-
-      </section>
-
-
-      <!-- EQUIPAMIENTO -->
-
-      <section
-        class="border border-base-600 bg-base-900"
-      >
-
-        <div
-          class="border-b border-base-600 px-5 py-4"
-        >
-
-          <div
-            class="text-[10px] font-mono font-bold tracking-[0.2em] text-gold-500"
-          >
-            05 // MATERIAL UTILIZADO
-          </div>
-
-        </div>
-
-
-        <div class="p-5">
-
-          {
-            equipment && equipment.length > 0 ? (
-              <div class="space-y-2">
-
-                {
-                  equipment.map((item: any) => (
-                    <div
-                      class="border border-base-600 bg-base-950 px-4 py-3 text-sm text-silver-300"
-                    >
-                      {item.description}
-                    </div>
-                  ))
-                }
-
-              </div>
-            ) : (
-              <div
-                class="text-xs font-mono text-silver-500"
-              >
-                SIN MATERIAL REGISTRADO.
-              </div>
-            )
-          }
-
-        </div>
-
-      </section>
-
-    </div>
-
-
-    <!-- ================================================= -->
-    <!-- GRABACIONES -->
-    <!-- ================================================= -->
-
-    <section
-      class="border border-base-600 bg-base-900"
-    >
-
-      <div
-        class="border-b border-base-600 px-5 py-4"
-      >
-
-        <div
-          class="text-[10px] font-mono font-bold tracking-[0.2em] text-gold-500"
-        >
-          06 // GRABACIONES
-        </div>
-
       </div>
 
 
-      <div class="p-5">
+      <div
+        class="border border-base-600/70 bg-base-900"
+      >
+        <div class="border-b border-base-600/60 px-6 py-4">
+          <p class="font-mono text-[10px] font-bold uppercase tracking-[0.25em] text-gold-500">
+            Equipamiento
+          </p>
+        </div>
 
-        {
-          recordings && recordings.length > 0 ? (
-            <div class="space-y-2">
-
-              {
-                recordings.map((recording: any) => (
-                  <a
-                    href={recording.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="block border border-base-600 bg-base-950 px-4 py-3 font-mono text-xs text-gold-400 transition hover:border-gold-500 hover:bg-gold-500/5"
-                  >
-                    {recording.url}
-                  </a>
-                ))
-              }
-
-            </div>
-          ) : (
-            <div
-              class="text-xs font-mono text-silver-500"
-            >
-              SIN GRABACIONES REGISTRADAS.
-            </div>
-          )
-        }
-
+        <div class="p-6">
+          {
+            equipment && equipment.length > 0 ? (
+              <div class="space-y-3">
+                {equipment.map((item) => (
+                  <div class="border border-base-600 bg-base-800 p-4">
+                    <p class="whitespace-pre-wrap font-mono text-xs leading-6 text-silver-200">
+                      {item.description}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p class="font-mono text-xs uppercase text-silver-500">
+                No se registró equipamiento.
+              </p>
+            )
+          }
+        </div>
       </div>
 
     </section>
+
+
+    <!-- RESULTADO -->
+
+    <section
+      class="border border-base-600/70 bg-base-900"
+    >
+      <div
+        class="border-b border-base-600/60 px-6 py-4"
+      >
+        <p
+          class="font-mono text-[10px] font-bold uppercase tracking-[0.25em] text-gold-500"
+        >
+          06 / Resultado y evidencias
+        </p>
+      </div>
+
+      <div class="grid gap-6 p-6 lg:grid-cols-2 lg:p-8">
+
+        <div>
+          <p class="font-mono text-[10px] uppercase tracking-wider text-silver-400">
+            Resultado
+          </p>
+
+          <p class="mt-3 whitespace-pre-wrap font-mono text-sm leading-7 text-silver-200">
+            {deployment.outcome || 'Sin resultado registrado.'}
+          </p>
+        </div>
+
+        <div>
+          <p class="font-mono text-[10px] uppercase tracking-wider text-silver-400">
+            Notas finales
+          </p>
+
+          <p class="mt-3 whitespace-pre-wrap font-mono text-sm leading-7 text-silver-200">
+            {deployment.final_notes || 'Sin notas finales.'}
+          </p>
+        </div>
+
+      </div>
+
+      {
+        recordings && recordings.length > 0 && (
+          <div class="border-t border-base-600/60 p-6 lg:p-8">
+            <p class="font-mono text-[10px] uppercase tracking-wider text-silver-400">
+              Grabaciones
+            </p>
+
+            <div class="mt-4 space-y-2">
+              {recordings.map((recording) => (
+                <a
+                  href={recording.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="block border border-base-600 bg-base-800 p-3 font-mono text-xs text-silver-200 transition hover:border-gold-500/40 hover:text-gold-500"
+                >
+                  {recording.url}
+                </a>
+              ))}
+            </div>
+          </div>
+        )
+      }
+    </section>
+
+
+    <!-- REVISIÓN -->
+
+    {
+      isPending && (
+        <section
+          class="border border-yellow-500/30 bg-yellow-500/5"
+        >
+          <div
+            class="border-b border-yellow-500/20 px-6 py-4"
+          >
+            <p
+              class="font-mono text-[10px] font-bold uppercase tracking-[0.25em] text-yellow-400"
+            >
+              Revisión administrativa
+            </p>
+          </div>
+
+          <div
+            class="flex flex-col gap-5 p-6 lg:flex-row lg:items-center lg:justify-between lg:p-8"
+          >
+            <div>
+              <h2
+                class="font-display text-lg font-bold uppercase text-bone-100"
+              >
+                Informe pendiente de revisión
+              </h2>
+
+              <p
+                class="mt-2 max-w-2xl font-mono text-xs leading-6 text-silver-400"
+              >
+                Verificá que la información registrada corresponda
+                con el despliegue antes de marcar el informe como revisado.
+              </p>
+            </div>
+
+            <button
+              id="review-button"
+              type="button"
+              data-deployment-id={deployment.id}
+              class="cursor-pointer border border-yellow-500/30 bg-yellow-500/10 px-5 py-3 text-xs font-black uppercase tracking-[0.15em] text-yellow-300 transition hover:border-yellow-400/50 hover:bg-yellow-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Confirmar revisión
+            </button>
+          </div>
+        </section>
+      )
+    }
 
   </div>
 
 
-  <!-- ================================================= -->
-  <!-- REVIEW SCRIPT -->
-  <!-- ================================================= -->
+  <!-- MODAL -->
 
   {
-    !isReviewed && isLeader && (
-      <script>
-        const reviewButton =
-          document.querySelector<HTMLButtonElement>(
-            '#review-button'
-          );
+    isPending && (
+      <div
+        id="review-modal"
+        class="fixed inset-0 z-[100] hidden items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      >
+        <div
+          class="w-full max-w-lg border border-base-600 bg-base-900"
+        >
 
-        reviewButton?.addEventListener(
-          'click',
-          async () => {
+          <div
+            class="border-b border-base-600 px-6 py-5"
+          >
+            <p
+              class="font-mono text-[10px] uppercase tracking-[0.25em] text-yellow-400"
+            >
+              Confirmación de revisión
+            </p>
 
-            if (!reviewButton) return;
+            <h2
+              class="mt-2 font-display text-xl font-black uppercase text-bone-100"
+            >
+              ¿Marcar informe como revisado?
+            </h2>
+          </div>
 
-            const confirmed =
-              window.confirm(
-                '¿Confirmás que revisaste este informe?'
-              );
+          <div class="px-6 py-6">
+            <p
+              class="font-mono text-sm leading-7 text-silver-300"
+            >
+              Esta acción registrará tu usuario como responsable
+              de la revisión y marcará el informe como revisado.
+            </p>
+          </div>
 
-            if (!confirmed) return;
+          <div
+            class="flex flex-col-reverse gap-3 border-t border-base-600 px-6 py-5 sm:flex-row sm:justify-end"
+          >
+            <button
+              id="cancel-review"
+              type="button"
+              class="cursor-pointer border border-base-600 bg-base-800 px-5 py-3 text-xs font-bold uppercase tracking-[0.15em] text-silver-300 transition hover:border-base-500 hover:text-bone-100"
+            >
+              Cancelar
+            </button>
 
+            <button
+              id="confirm-review"
+              type="button"
+              class="cursor-pointer border border-yellow-500/30 bg-yellow-500/10 px-5 py-3 text-xs font-black uppercase tracking-[0.15em] text-yellow-300 transition hover:border-yellow-400/50 hover:bg-yellow-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Confirmar revisión
+            </button>
+          </div>
 
-            reviewButton.disabled = true;
-
-            reviewButton.innerHTML =
-              '<span>...</span><span>REVISANDO INFORME</span>';
-
-
-            try {
-
-              const response =
-                await fetch(
-                  '/api/despliegues/revisar',
-                  {
-                    method: 'POST',
-
-                    headers: {
-                      'Content-Type':
-                        'application/json',
-                    },
-
-                    body: JSON.stringify({
-                      deploymentId:
-                        Number('{currentDeployment.id}')
-                    }),
-                  }
-                );
-
-
-              const text =
-                await response.text();
-
-
-              let result: any = null;
-
-              try {
-                result = JSON.parse(text);
-              } catch {
-                throw new Error(
-                  'Respuesta inválida del servidor.'
-                );
-              }
-
-
-              if (!response.ok || !result.success) {
-                throw new Error(
-                  result.error ||
-                  'No se pudo revisar el informe.'
-                );
-              }
-
-
-              window.location.reload();
-
-            } catch (error) {
-
-              console.error(
-                'REVIEW ERROR:',
-                error
-              );
-
-              alert(
-                error instanceof Error
-                  ? error.message
-                  : 'No se pudo revisar el informe.'
-              );
-
-
-              reviewButton.disabled = false;
-
-              reviewButton.innerHTML =
-                '<span>✓</span><span>MARCAR COMO REVISADO</span>';
-
-            }
-
-          }
-        );
-      </script>
+        </div>
+      </div>
     )
   }
 
-</OperatorLayout>
+</CommandLayout>
+
+
+<script define:vars={{ deploymentId }}>
+  console.log('========================================');
+  console.log('REVIEW SCRIPT CARGADO');
+  console.log('DEPLOYMENT ID:', deploymentId);
+
+  const reviewButton =
+    document.querySelector('#review-button');
+
+  const modal =
+    document.querySelector('#review-modal');
+
+  const cancelButton =
+    document.querySelector('#cancel-review');
+
+  const confirmButton =
+    document.querySelector('#confirm-review');
+
+  console.log('REVIEW ELEMENTS:', {
+    reviewButton,
+    modal,
+    cancelButton,
+    confirmButton,
+  });
+
+  if (
+    !reviewButton ||
+    !modal ||
+    !cancelButton ||
+    !confirmButton
+  ) {
+    console.error(
+      'REVIEW ERROR: No se encontraron todos los elementos.'
+    );
+  } else {
+    console.log(
+      'REVIEW: Todos los elementos fueron encontrados.'
+    );
+
+    function openModal() {
+      console.log('REVIEW: Abriendo modal.');
+
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeModal() {
+      console.log('REVIEW: Cerrando modal.');
+
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+
+      document.body.style.overflow = '';
+    }
+
+    reviewButton.addEventListener(
+      'click',
+      function () {
+        console.log(
+          'REVIEW: Click en botón principal.'
+        );
+
+        openModal();
+      }
+    );
+
+    cancelButton.addEventListener(
+      'click',
+      function () {
+        console.log(
+          'REVIEW: Click en cancelar.'
+        );
+
+        closeModal();
+      }
+    );
+
+    modal.addEventListener(
+      'click',
+      function (event) {
+        if (event.target === modal) {
+          closeModal();
+        }
+      }
+    );
+
+    document.addEventListener(
+      'keydown',
+      function (event) {
+        if (event.key === 'Escape') {
+          closeModal();
+        }
+      }
+    );
+
+    confirmButton.addEventListener(
+      'click',
+      async function () {
+        console.log(
+          '========================================'
+        );
+
+        console.log(
+          'REVIEW: CLICK EN CONFIRMAR REVISIÓN'
+        );
+
+        console.log(
+          'REVIEW: Deployment ID:',
+          deploymentId
+        );
+
+        confirmButton.disabled = true;
+        reviewButton.disabled = true;
+
+        const originalText =
+          confirmButton.textContent;
+
+        confirmButton.textContent =
+          'PROCESANDO...';
+
+        try {
+          console.log(
+            'REVIEW: Enviando POST...'
+          );
+
+          const response =
+            await fetch(
+              '/api/despliegues/revisar',
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type':
+                    'application/json',
+                },
+                body: JSON.stringify({
+                  deploymentId:
+                    Number(deploymentId),
+                }),
+              }
+            );
+
+          console.log(
+            'REVIEW: HTTP STATUS:',
+            response.status
+          );
+
+          const responseText =
+            await response.text();
+
+          console.log(
+            'REVIEW: RESPUESTA RAW:',
+            responseText
+          );
+
+          let result;
+
+          try {
+            result =
+              JSON.parse(responseText);
+          } catch {
+            throw new Error(
+              'El servidor no devolvió JSON válido.'
+            );
+          }
+
+          console.log(
+            'REVIEW: RESPUESTA JSON:',
+            result
+          );
+
+          if (
+            !response.ok ||
+            !result ||
+            !result.success
+          ) {
+            throw new Error(
+              result?.error ||
+              'No se pudo revisar el informe.'
+            );
+          }
+
+          console.log(
+            'REVIEW: INFORME REVISADO CORRECTAMENTE.'
+          );
+
+          closeModal();
+
+          window.location.reload();
+
+        } catch (error) {
+          console.error(
+            'REVIEW ERROR:',
+            error
+          );
+
+          confirmButton.disabled = false;
+          reviewButton.disabled = false;
+
+          confirmButton.textContent =
+            originalText ||
+            'Confirmar revisión';
+
+          window.alert(
+            error instanceof Error
+              ? error.message
+              : 'No se pudo revisar el informe.'
+          );
+        }
+      }
+    );
+  }
+</script>

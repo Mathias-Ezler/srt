@@ -1,0 +1,682 @@
+---
+import OperatorLayout from '../layouts/OperatorLayout.astro';
+import { getCurrentMember } from '../lib/auth';
+import { createApiClient } from '../lib/supabase-api';
+
+const { member } = await getCurrentMember(Astro);
+
+if (!member) {
+  return Astro.redirect('/login');
+}
+
+const supabase = createApiClient(Astro.request, Astro.cookies);
+const REPORT_TIME_ZONE = 'America/Asuncion';
+
+const monthPartsFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: REPORT_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+});
+
+const wallClockFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: REPORT_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+});
+
+const monthLabelFormatter = new Intl.DateTimeFormat('es-PY', {
+  timeZone: REPORT_TIME_ZONE,
+  month: 'long',
+  year: 'numeric',
+});
+
+function formattedParts(
+  formatter: Intl.DateTimeFormat,
+  value: Date,
+) {
+  return Object.fromEntries(
+    formatter.formatToParts(value).map((part) => [part.type, part.value]),
+  );
+}
+
+function getYearMonth(value: Date) {
+  const parts = formattedParts(monthPartsFormatter, value);
+
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+  };
+}
+
+function monthKey(year: number, month: number) {
+  return `${year}-${String(month).padStart(2, '0')}`;
+}
+
+// Convierte la medianoche de Paraguay a UTC para filtrar timestamptz con
+// límites iguales para todos los operadores, incluso cerca del cambio de mes.
+function localMonthBoundaryUtc(year: number, month: number) {
+  const targetWallClock = Date.UTC(year, month - 1, 1, 0, 0, 0);
+  let guess = targetWallClock;
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const parts = formattedParts(wallClockFormatter, new Date(guess));
+    const observedWallClock = Date.UTC(
+      Number(parts.year),
+      Number(parts.month) - 1,
+      Number(parts.day),
+      Number(parts.hour),
+      Number(parts.minute),
+      Number(parts.second),
+    );
+    const correction = targetWallClock - observedWallClock;
+
+    if (correction === 0) break;
+    guess += correction;
+  }
+
+  return new Date(guess);
+}
+
+const { year: currentYear, month: currentMonth } = getYearMonth(new Date());
+const currentMonthKey = monthKey(currentYear, currentMonth);
+const requestedMonth = Astro.url.searchParams.get('mes') ?? '';
+const requestedMatch = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(requestedMonth);
+const requestedYear = requestedMatch ? Number(requestedMatch[1]) : 0;
+const requestedMonthNumber = requestedMatch ? Number(requestedMatch[2]) : 0;
+const requestedMonthKey = requestedMatch
+  ? monthKey(requestedYear, requestedMonthNumber)
+  : '';
+const useRequestedMonth =
+  Boolean(requestedMatch) &&
+  requestedYear >= 2000 &&
+  requestedMonthKey <= currentMonthKey;
+
+const selectedYear = useRequestedMonth ? requestedYear : currentYear;
+const selectedMonth = useRequestedMonth ? requestedMonthNumber : currentMonth;
+const selectedMonthKey = monthKey(selectedYear, selectedMonth);
+const selectedMonthDate = new Date(
+  Date.UTC(selectedYear, selectedMonth - 1, 15, 12),
+);
+const selectedMonthLabel = monthLabelFormatter.format(selectedMonthDate);
+const periodStart = localMonthBoundaryUtc(selectedYear, selectedMonth);
+const periodEnd = localMonthBoundaryUtc(
+  selectedMonth === 12 ? selectedYear + 1 : selectedYear,
+  selectedMonth === 12 ? 1 : selectedMonth + 1,
+);
+
+const monthOptions = Array.from({ length: 12 }, (_, offset) => {
+  const absoluteMonth = currentYear * 12 + currentMonth - 1 - offset;
+  const year = Math.floor(absoluteMonth / 12);
+  const month = (absoluteMonth % 12) + 1;
+  const date = new Date(Date.UTC(year, month - 1, 15, 12));
+
+  return {
+    key: monthKey(year, month),
+    label: monthLabelFormatter.format(date),
+  };
+});
+
+if (!monthOptions.some((option) => option.key === selectedMonthKey)) {
+  monthOptions.push({
+    key: selectedMonthKey,
+    label: selectedMonthLabel,
+  });
+  monthOptions.sort((a, b) => b.key.localeCompare(a.key));
+}
+
+type MemberRelation = {
+  id: string;
+  full_name: string | null;
+  callsign: string | null;
+  photo_url: string | null;
+};
+
+type DeploymentMembership = {
+  member_id: string | null;
+  members: MemberRelation | MemberRelation[] | null;
+};
+
+type DeploymentRow = {
+  id: string | number;
+  risk_level: string | null;
+  created_at: string;
+  deployment_members: DeploymentMembership[] | null;
+};
+
+type MemberMonthlyStats = {
+  id: string;
+  name: string;
+  callsign: string;
+  photoPath: string | null;
+  deploymentIds: Set<string>;
+};
+
+const deploymentRows: DeploymentRow[] = [];
+const PAGE_SIZE = 500;
+let offset = 0;
+let statsError: string | null = null;
+
+// Paginar evita que el límite por respuesta de Supabase recorte el ranking.
+while (true) {
+  const { data, error } = await supabase
+    .from('deployments')
+    .select(`
+      id,
+      risk_level,
+      created_at,
+      deployment_members (
+        member_id,
+        members (
+          id,
+          full_name,
+          callsign,
+          photo_url
+        )
+      )
+    `)
+    .gte('created_at', periodStart.toISOString())
+    .lt('created_at', periodEnd.toISOString())
+    .order('created_at', { ascending: false })
+    .range(offset, offset + PAGE_SIZE - 1);
+
+  if (error) {
+    console.error('MONTHLY DEPLOYMENT STATS ERROR:', error);
+    statsError = error.message;
+    break;
+  }
+
+  const page = (data ?? []) as unknown as DeploymentRow[];
+  deploymentRows.push(...page);
+
+  if (page.length < PAGE_SIZE) break;
+  offset += PAGE_SIZE;
+}
+
+const memberStats = new Map<string, MemberMonthlyStats>();
+
+for (const deployment of deploymentRows) {
+  const deploymentId = String(deployment.id);
+  const membersInDeployment = new Set<string>();
+
+  for (const assignment of deployment.deployment_members ?? []) {
+    const relatedMember = Array.isArray(assignment.members)
+      ? assignment.members[0]
+      : assignment.members;
+    const memberId = assignment.member_id ?? relatedMember?.id;
+
+    if (!memberId || membersInDeployment.has(memberId)) continue;
+    membersInDeployment.add(memberId);
+
+    const stats = memberStats.get(memberId) ?? {
+      id: memberId,
+      name:
+        relatedMember?.full_name?.trim() ||
+        relatedMember?.callsign?.trim() ||
+        'Operador sin nombre',
+      callsign: relatedMember?.callsign?.trim() || 'SIN PLACA',
+      photoPath: relatedMember?.photo_url ?? null,
+      deploymentIds: new Set<string>(),
+    };
+
+    stats.deploymentIds.add(deploymentId);
+    memberStats.set(memberId, stats);
+  }
+}
+
+const sortedMembers = [...memberStats.values()]
+  .map((stats) => ({
+    ...stats,
+    deployments: stats.deploymentIds.size,
+  }))
+  .sort(
+    (a, b) =>
+      b.deployments - a.deployments ||
+      a.callsign.localeCompare(b.callsign, 'es'),
+  );
+
+let lastDeploymentCount = -1;
+let currentRank = 0;
+
+const ranking = sortedMembers.map((operator, index) => {
+  if (operator.deployments !== lastDeploymentCount) {
+    currentRank = index + 1;
+    lastDeploymentCount = operator.deployments;
+  }
+
+  return {
+    ...operator,
+    rank: currentRank,
+  };
+});
+
+const myStats = memberStats.get(member.id);
+const myDeployments = myStats?.deploymentIds.size ?? 0;
+const myRanking = ranking.find((operator) => operator.id === member.id);
+
+type RiskKey = 'critical' | 'high' | 'medium' | 'low';
+
+const riskDefinitions: {
+  key: RiskKey;
+  label: string;
+  color: string;
+  markerClass: string;
+}[] = [
+  {
+    key: 'critical',
+    label: 'Crítico',
+    color: 'var(--color-danger-500)',
+    markerClass: 'bg-danger-500',
+  },
+  {
+    key: 'high',
+    label: 'Alto',
+    color: 'var(--color-gold-500)',
+    markerClass: 'bg-gold-500',
+  },
+  {
+    key: 'medium',
+    label: 'Medio',
+    color: 'var(--color-silver-300)',
+    markerClass: 'bg-silver-300',
+  },
+  {
+    key: 'low',
+    label: 'Bajo',
+    color: 'var(--color-blue-600)',
+    markerClass: 'bg-blue-600',
+  },
+];
+
+function normalizeRiskLevel(value: string | null): RiskKey | null {
+  const normalized = (value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+
+  if (normalized === 'critico' || normalized === 'critical') return 'critical';
+  if (normalized === 'alto' || normalized === 'high') return 'high';
+  if (normalized === 'medio' || normalized === 'medium') return 'medium';
+  if (normalized === 'bajo' || normalized === 'low') return 'low';
+  return null;
+}
+
+const riskCounts: Record<RiskKey, number> = {
+  critical: 0,
+  high: 0,
+  medium: 0,
+  low: 0,
+};
+let unclassifiedRiskCount = 0;
+
+for (const deployment of deploymentRows) {
+  const riskLevel = normalizeRiskLevel(deployment.risk_level);
+  if (riskLevel) riskCounts[riskLevel] += 1;
+  else unclassifiedRiskCount += 1;
+}
+
+const riskTotal = deploymentRows.length;
+const riskSummary: {
+  key: string;
+  label: string;
+  color: string;
+  markerClass: string;
+  count: number;
+  percent: number;
+}[] = riskDefinitions.map((risk) => ({
+  ...risk,
+  count: riskCounts[risk.key],
+  percent: riskTotal
+    ? Math.round((riskCounts[risk.key] / riskTotal) * 100)
+    : 0,
+}));
+
+if (unclassifiedRiskCount > 0) {
+  riskSummary.push({
+    key: 'unclassified',
+    label: 'Sin clasificar',
+    color: 'var(--color-base-600)',
+    markerClass: 'bg-base-600',
+    count: unclassifiedRiskCount,
+    percent: Math.round((unclassifiedRiskCount / riskTotal) * 100),
+  });
+}
+
+const riskPieGradient = (() => {
+  if (!riskTotal) {
+    return 'conic-gradient(var(--color-base-600) 0deg 360deg)';
+  }
+
+  const visibleLevels = riskSummary.filter((risk) => risk.count > 0);
+  let angle = 0;
+
+  const slices = visibleLevels.map((risk, index) => {
+    const endAngle =
+      index === visibleLevels.length - 1
+        ? 360
+        : angle + (risk.count / riskTotal) * 360;
+    const slice = `${risk.color} ${angle}deg ${endAngle}deg`;
+    angle = endAngle;
+    return slice;
+  });
+
+  return `conic-gradient(${slices.join(', ')})`;
+})();
+
+async function resolveOperatorPhoto(path: string | null): Promise<string | null> {
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path;
+
+  const { data } = await supabase.storage
+    .from('avatars')
+    .createSignedUrl(path, 3600);
+
+  return data?.signedUrl ?? null;
+}
+
+const topOperators = await Promise.all(
+  ranking.slice(0, 5).map(async (operator) => ({
+    ...operator,
+    photoUrl: await resolveOperatorPhoto(operator.photoPath),
+  })),
+);
+
+function operatorInitials(name: string) {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  const first = words[0] ?? '?';
+  const last = words.length > 1 ? words[words.length - 1] : first;
+  const secondInitial =
+    words.length > 1 ? last.slice(0, 1) : first.slice(1, 2);
+
+  return `${first.slice(0, 1)}${secondInitial}`.toUpperCase();
+}
+
+const metrics = [
+  {
+    code: '01',
+    label: 'Tus despliegues',
+    value: myDeployments,
+    detail: myRanking
+      ? `Puesto ${myRanking.rank} del equipo`
+      : 'Sin participación este mes',
+    highlight: true,
+  },
+  {
+    code: '02',
+    label: 'Despliegues del equipo',
+    value: deploymentRows.length,
+    detail: 'Operaciones registradas en el mes',
+    highlight: false,
+  },
+];
+---
+
+<OperatorLayout title="Estadísticas" active="estadisticas">
+  <div class="mx-auto max-w-7xl space-y-6">
+    <!-- ENCABEZADO Y SELECTOR DE MES -->
+    <section class="flex flex-col gap-5 border-b border-base-600/50 pb-5 md:flex-row md:items-end md:justify-between">
+      <div>
+        <p class="flex items-center gap-2 font-mono text-[9px] uppercase tracking-[0.28em] text-gold-500">
+          <span class="h-1.5 w-1.5 bg-gold-500" aria-hidden="true"></span>
+          SRT / Análisis operacional
+        </p>
+        <h1 class="mt-2 font-display text-3xl font-bold uppercase tracking-[0.08em] text-bone-100 sm:text-4xl">
+          Estadísticas
+        </h1>
+        <p class="mt-2 max-w-2xl text-sm leading-relaxed text-silver-300">
+          Tu actividad y el rendimiento mensual de todo el equipo.
+        </p>
+      </div>
+
+      <form method="get" action="/estadisticas" class="flex flex-col gap-2 sm:flex-row sm:items-end">
+        <div>
+          <label for="month-select" class="mb-1 block font-mono text-[9px] uppercase tracking-[0.2em] text-silver-300">
+            Período · Paraguay
+          </label>
+          <select
+            id="month-select"
+            name="mes"
+            class="min-w-52 border border-base-600 bg-base-900 px-3 py-2.5 font-mono text-xs uppercase tracking-wider text-bone-100 outline-none focus:border-gold-500"
+          >
+            {monthOptions.map((option) => (
+              <option value={option.key} selected={option.key === selectedMonthKey}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button
+          type="submit"
+          class="border border-gold-500/60 bg-gold-500/10 px-4 py-2.5 font-mono text-[10px] uppercase tracking-[0.18em] text-gold-500 transition-colors hover:bg-gold-500 hover:text-base-950"
+        >
+          Ver mes
+        </button>
+      </form>
+    </section>
+
+    {statsError ? (
+      <section role="alert" class="border border-danger-500/40 bg-danger-500/10 p-5">
+        <p class="font-mono text-[10px] uppercase tracking-wider text-danger-500">
+          No se pudieron cargar las estadísticas
+        </p>
+        <p class="mt-2 font-mono text-xs text-silver-300">{statsError}</p>
+      </section>
+    ) : (
+      <>
+        <!-- CIFRAS DEL MES -->
+        <section
+          class="grid gap-3 sm:grid-cols-2"
+          aria-label={`Estadísticas de ${selectedMonthLabel}`}
+        >
+          {metrics.map((metric) => (
+            <article
+              class:list={[
+                'relative min-w-0 border p-5',
+                metric.highlight
+                  ? 'border-gold-500/50 bg-gold-500/5'
+                  : 'border-base-600/60 bg-base-900',
+              ]}
+            >
+              <span
+                class:list={[
+                  'absolute inset-y-0 left-0 w-0.5',
+                  metric.highlight ? 'bg-gold-500' : 'bg-base-600',
+                ]}
+                aria-hidden="true"
+              ></span>
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <p class="font-mono text-[9px] uppercase tracking-[0.2em] text-silver-300">
+                    {metric.label}
+                  </p>
+                  <p
+                    class:list={[
+                      'mt-2 font-display text-4xl font-bold tabular-nums',
+                      metric.highlight ? 'text-gold-500' : 'text-bone-100',
+                    ]}
+                  >
+                    {metric.value}
+                  </p>
+                </div>
+                <span class="font-mono text-[9px] text-base-600">{metric.code}</span>
+              </div>
+              <p class="mt-3 font-mono text-[9px] uppercase tracking-wider text-silver-300">
+                {metric.detail}
+              </p>
+            </article>
+          ))}
+        </section>
+
+        <!-- DISTRIBUCIÓN POR NIVEL DE RIESGO -->
+        <section class="border border-base-600/60 bg-base-900">
+          <header class="border-b border-base-600/50 px-5 py-4">
+            <p class="font-mono text-[9px] uppercase tracking-[0.22em] text-gold-500">
+              Clasificación de riesgo
+            </p>
+            <h2 class="mt-1 font-display text-xl font-bold uppercase tracking-wide text-bone-100">
+              Despliegues por nivel
+            </h2>
+          </header>
+
+          <div class="flex flex-col items-center gap-6 p-5 sm:flex-row sm:justify-center">
+            <div
+              class="aspect-square w-52 shrink-0 rounded-full border border-base-600/60 shadow-[0_0_36px_rgba(227,186,25,0.08)]"
+              style={`background: ${riskPieGradient};`}
+              role="img"
+              aria-label={`Gráfico circular con ${riskTotal} despliegues clasificados por nivel de riesgo`}
+            ></div>
+
+            <ul class="grid w-full gap-3 sm:max-w-sm">
+              {riskSummary.map((risk) => (
+                <li class="flex items-center justify-between gap-4 border-b border-base-600/40 pb-2 last:border-b-0">
+                  <span class="flex min-w-0 items-center gap-3">
+                    <span
+                      class={`h-2.5 w-2.5 shrink-0 ${risk.markerClass}`}
+                      aria-hidden="true"
+                    ></span>
+                    <span class="truncate font-mono text-[10px] uppercase tracking-wider text-silver-300">
+                      {risk.label}
+                    </span>
+                  </span>
+                  <span class="shrink-0 text-right font-mono text-xs tabular-nums text-bone-100">
+                    {risk.count}
+                    <span class="ml-2 text-[9px] text-silver-300">{risk.percent}%</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+
+        <!-- TOP 5 DEL EQUIPO -->
+        <section class="border border-base-600/60 bg-base-900">
+          <header class="flex items-end justify-between gap-4 border-b border-base-600/50 px-5 py-4">
+            <div>
+              <p class="font-mono text-[9px] uppercase tracking-[0.22em] text-gold-500">
+                Rendimiento del equipo
+              </p>
+              <h2 class="mt-1 font-display text-xl font-bold uppercase tracking-wide text-bone-100">
+                Más desplegados del mes
+              </h2>
+            </div>
+            <span class="font-mono text-[9px] uppercase tracking-wider text-silver-300">
+              Top {Math.min(5, topOperators.length)}
+            </span>
+          </header>
+
+          {topOperators.length > 0 ? (
+            <ol class="grid gap-4 p-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+              {topOperators.map((operator) => (
+                <li
+                  class:list={[
+                    'overflow-hidden border border-base-600/50 bg-base-950',
+                    operator.id === member.id ? 'border-gold-500/60' : '',
+                  ]}
+                >
+                  <div class="relative aspect-[4/3] overflow-hidden bg-base-800">
+                    <div
+                      class="absolute inset-0 flex items-center justify-center font-display text-5xl font-bold tracking-widest text-gold-500/70"
+                      aria-hidden="true"
+                    >
+                      {operatorInitials(operator.name)}
+                    </div>
+                    {operator.photoUrl && (
+                      <img
+                        src={operator.photoUrl}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        class="absolute inset-0 h-full w-full object-cover"
+                        onerror="this.style.display='none'"
+                      />
+                    )}
+                    <span class="absolute left-3 top-3 border border-gold-500/60 bg-base-950/90 px-2 py-1 font-mono text-[10px] text-gold-500">
+                      #{String(operator.rank).padStart(2, '0')}
+                    </span>
+                    {operator.id === member.id && (
+                      <span class="absolute bottom-3 right-3 bg-gold-500 px-2 py-1 font-mono text-[8px] font-bold uppercase tracking-wider text-base-950">
+                        TÚ
+                      </span>
+                    )}
+                  </div>
+                  <div class="p-4">
+                    <h3 class="line-clamp-2 min-h-10 font-display text-base font-bold uppercase tracking-wide text-bone-100">
+                      {operator.name}
+                    </h3>
+                    <p class="mt-1 truncate font-mono text-[9px] uppercase tracking-wider text-silver-300">
+                      [{operator.callsign}]
+                    </p>
+                    <div class="mt-4 flex items-end justify-between border-t border-base-600/50 pt-3">
+                      <span class="font-mono text-[8px] uppercase tracking-wider text-silver-300">
+                        Participaciones
+                      </span>
+                      <span class="font-display text-2xl font-bold tabular-nums text-gold-500">
+                        {operator.deployments}
+                      </span>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p class="p-8 text-center font-mono text-[10px] uppercase tracking-wider text-silver-300">
+              Aún no hay participantes registrados para este mes.
+            </p>
+          )}
+        </section>
+
+        <!-- RESUMEN PERSONAL -->
+        <section class="max-w-2xl border border-base-600/60 bg-base-900">
+          <header class="border-b border-base-600/50 px-5 py-4">
+            <p class="font-mono text-[9px] uppercase tracking-[0.22em] text-gold-500">
+              Expediente individual
+            </p>
+            <h2 class="mt-1 font-display text-xl font-bold uppercase tracking-wide text-bone-100">
+              Mi mes
+            </h2>
+          </header>
+
+          <div class="p-5">
+            <p class="font-display text-lg font-bold uppercase text-bone-100">
+              {member.full_name ?? 'Operador'}
+            </p>
+            <p class="mt-1 font-mono text-[10px] uppercase tracking-wider text-gold-500">
+              [{member.callsign ?? 'SIN PLACA'}]
+              {member.rank?.name ? ` · ${member.rank.name}` : ''}
+            </p>
+
+            <div class="mt-5 border-t border-base-600/50 pt-4">
+              <div class="flex items-end justify-between gap-4">
+                <div>
+                  <p class="font-mono text-[9px] uppercase tracking-[0.18em] text-silver-300">
+                    Participaciones
+                  </p>
+                  <p class="mt-1 font-display text-3xl font-bold tabular-nums text-bone-100">
+                    {myDeployments}
+                  </p>
+                </div>
+                {myRanking && (
+                  <p class="text-right font-mono text-[9px] uppercase tracking-wider text-silver-300">
+                    Puesto
+                    <span class="mt-1 block font-display text-xl font-bold text-gold-500">
+                      #{myRanking.rank}
+                    </span>
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <p class="border-l-2 border-base-600 pl-3 font-mono text-[9px] uppercase leading-relaxed tracking-wider text-silver-300">
+          Los períodos se calculan según la hora de GTAHUB. Las estadísticas se actualizan al cambiar de mes, buena suerte.
+        </p>
+      </>
+    )}
+  </div>
+</OperatorLayout>

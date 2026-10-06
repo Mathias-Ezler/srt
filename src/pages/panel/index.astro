@@ -1,58 +1,365 @@
 ---
 import CommandLayout from '../../layouts/CommandLayout.astro';
-import MemberGrid from '../../components/command/MemberGrid.astro';
+import { getCurrentMember } from '../../lib/auth';
+import { hasPermission } from '../../lib/permissions';
+import { createApiClient } from '../../lib/supabase-api';
+
+const { member, permissions } = await getCurrentMember(Astro);
+
+if (!member) {
+  return Astro.redirect('/login');
+}
+
+if (!hasPermission(permissions, 'admin.access')) {
+  return Astro.redirect('/perfil');
+}
+
+const supabase = createApiClient(Astro.request, Astro.cookies);
+
+const now = new Date();
+const startOfMonth = new Date(
+  now.getFullYear(),
+  now.getMonth(),
+  1
+).toISOString();
+
+const [
+  membersResult,
+  deploymentsResult,
+  monthlyResult,
+  pendingResult,
+] = await Promise.all([
+  supabase
+    .from('members')
+    .select('id', { count: 'exact', head: true }),
+
+  supabase
+    .from('deployments')
+    .select('id', { count: 'exact', head: true }),
+
+  supabase
+    .from('deployments')
+    .select('id', { count: 'exact', head: true })
+    .gte('created_at', startOfMonth),
+
+  supabase
+    .from('deployments')
+    .select(
+      `
+        id,
+        code,
+        title,
+        type,
+        location,
+        risk_level,
+        created_at,
+        created_by,
+        members!deployments_created_by_fkey (
+          id,
+          full_name,
+          callsign
+        )
+      `,
+      { count: 'exact' }
+    )
+    .eq('report_status', 'pending_review')
+    .order('created_at', { ascending: false })
+    .limit(8),
+]);
+
+const totalMembers = membersResult.count ?? 0;
+const totalDeployments = deploymentsResult.count ?? 0;
+const monthlyDeployments = monthlyResult.count ?? 0;
+const pendingDeployments = pendingResult.data ?? [];
+const pendingCount = pendingResult.count ?? pendingDeployments.length;
+
+const metrics = [
+  {
+    code: '01',
+    label: 'Personal',
+    value: totalMembers,
+    detail: 'Miembros registrados',
+    attention: false,
+  },
+  {
+    code: '02',
+    label: 'Operaciones',
+    value: totalDeployments,
+    detail: 'Despliegues registrados',
+    attention: false,
+  },
+  {
+    code: '03',
+    label: 'Actividad mensual',
+    value: monthlyDeployments,
+    detail: 'Despliegues este mes',
+    attention: false,
+  },
+  {
+    code: '04',
+    label: 'Revisión',
+    value: pendingCount,
+    detail: 'Informes pendientes',
+    attention: true,
+  },
+];
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat('es-PY', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
+}
+
+function getRiskClass(risk: string | null) {
+  switch (risk) {
+    case 'Crítico':
+      return 'border-[#986052]/60 bg-[#986052]/15 text-[#d19383]';
+    case 'Alto':
+      return 'border-[#a77a50]/60 bg-[#a77a50]/15 text-[#d4aa7a]';
+    case 'Medio':
+      return 'border-[#8c7b50]/60 bg-[#8c7b50]/15 text-[#d2bd86]';
+    case 'Bajo':
+      return 'border-[#687550]/60 bg-[#687550]/15 text-[#aab68a]';
+    default:
+      return 'border-[#45463a] bg-[#202119] text-[#aaa899]';
+  }
+}
+
+function getRiskAccent(risk: string | null) {
+  switch (risk) {
+    case 'Crítico':
+      return 'border-l-[#b67162]';
+    case 'Alto':
+      return 'border-l-[#bd8a5b]';
+    case 'Medio':
+      return 'border-l-[#b9a873]';
+    case 'Bajo':
+      return 'border-l-[#87936b]';
+    default:
+      return 'border-l-[#555647]';
+  }
+}
 ---
 
-<CommandLayout>
-
-  <!-- CABECERA -->
+<CommandLayout title="Centro de Mando | SRT">
+  <!-- RESUMEN -->
   <section class="mb-8">
-    <div
-      class="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between"
-    >
+    <div class="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
       <div>
         <div class="flex items-center gap-2">
-          <span class="h-1.5 w-1.5 bg-gold-500"></span>
-
-          <span
-            class="font-mono text-[9px] uppercase tracking-[0.3em] text-gold-500"
-          >
-            Personnel Management
+          <span class="h-1.5 w-1.5 bg-[#c0aa73]" aria-hidden="true"></span>
+          <span class="font-mono text-[9px] uppercase tracking-[0.28em] text-[#c0aa73]">
+            SRT / Gestión operacional
           </span>
         </div>
 
-        <h1
-          class="mt-2 font-display text-4xl font-bold uppercase tracking-wide text-bone-100 lg:text-5xl"
-        >
-          Personal Operativo
+        <h1 class="mt-2 font-display text-3xl font-bold uppercase tracking-[0.08em] text-bone-100 sm:text-4xl lg:text-5xl">
+          Resumen operativo
         </h1>
 
-        <p
-          class="mt-2 max-w-2xl text-sm leading-relaxed text-silver-300"
-        >
-          Gestión y supervisión del personal perteneciente
-          al Special Response Team.
+        <p class="mt-2 max-w-2xl text-sm leading-relaxed text-[#aaa899]">
+          Supervisión general del equipo, informes operativos y personal.
+        </p>
+      </div>
+
+      <div class="border border-[#49483a] bg-[#171811] px-4 py-3 sm:min-w-64">
+        <p class="flex items-center gap-2 font-mono text-[9px] uppercase tracking-[0.2em] text-[#929080]">
+          <span class="h-1.5 w-1.5 bg-[#87936b]" aria-hidden="true"></span>
+          Operador autorizado
+        </p>
+
+        <p class="mt-2 truncate font-display text-sm font-bold uppercase tracking-wide text-bone-100">
+          {member.full_name ?? 'Sin nombre'}
+        </p>
+
+        <p class="mt-1 font-mono text-[10px] uppercase tracking-wider text-[#c9b47b]">
+          {member.callsign ?? 'SIN CALLSIGN'}
+          {member.rank?.name ? ` · ${member.rank.name}` : ''}
         </p>
       </div>
     </div>
   </section>
 
-  <!-- SEPARADOR -->
-  <div class="mb-6 flex items-center gap-4">
-    <div class="h-px flex-1 bg-base-600/40"></div>
+  <!-- INDICADORES -->
+  <section
+    class="mb-9 grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
+    aria-label="Indicadores del equipo"
+  >
+    {metrics.map((metric) => (
+      <article
+        class:list={[
+          'relative min-w-0 overflow-hidden border p-5',
+          metric.attention
+            ? 'border-[#746344] bg-[#1d1b14]'
+            : 'border-[#393a31] bg-[#171811]',
+        ]}
+      >
+        <span
+          class:list={[
+            'absolute inset-y-0 left-0 w-[2px]',
+            metric.attention ? 'bg-[#b9a873]' : 'bg-[#555647]',
+          ]}
+          aria-hidden="true"
+        ></span>
 
-    <span
-      class="font-mono text-[9px] uppercase tracking-[0.25em] text-base-600"
-    >
-      Personnel Registry
-    </span>
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <p
+              class:list={[
+                'font-mono text-[9px] uppercase tracking-[0.2em]',
+                metric.attention ? 'text-[#c9b47b]' : 'text-[#aaa899]',
+              ]}
+            >
+              {metric.label}
+            </p>
 
-    <div class="h-px flex-1 bg-base-600/40"></div>
-  </div>
+            <p
+              class:list={[
+                'mt-2 font-display text-4xl font-bold tabular-nums',
+                metric.attention ? 'text-[#d2bd86]' : 'text-bone-100',
+              ]}
+            >
+              {metric.value}
+            </p>
+          </div>
 
-  <!-- MIEMBROS -->
-  <section>
-    <MemberGrid />
+          <span class="font-mono text-[9px] tracking-wider text-[#686858]">
+            {metric.code}
+          </span>
+        </div>
+
+        <p class="mt-3 font-mono text-[9px] uppercase tracking-wider text-[#929080]">
+          {metric.detail}
+        </p>
+      </article>
+    ))}
   </section>
 
+  <!-- INFORMES PENDIENTES -->
+  <section>
+    <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <p class="font-mono text-[9px] uppercase tracking-[0.25em] text-[#c0aa73]">
+          Revisión administrativa
+        </p>
+
+        <h2 class="mt-1 font-display text-2xl font-bold uppercase tracking-[0.08em] text-bone-100">
+          Informes pendientes
+        </h2>
+
+        <p class="mt-1 max-w-2xl font-mono text-[10px] uppercase tracking-wider text-[#929080]">
+          Operaciones que requieren revisión administrativa.
+        </p>
+
+        {pendingCount > pendingDeployments.length && (
+          <p class="mt-2 font-mono text-[9px] uppercase tracking-wider text-[#aaa899]">
+            Mostrando los {pendingDeployments.length} informes más recientes de {pendingCount}.
+          </p>
+        )}
+      </div>
+
+      <span class="w-fit border border-[#746344] bg-[#77704b]/15 px-2.5 py-1 font-mono text-[9px] uppercase tracking-wider text-[#d2bd86]">
+        {pendingCount}
+        {pendingCount === 1 ? ' pendiente' : ' pendientes'}
+      </span>
+    </div>
+
+    {pendingDeployments.length === 0 ? (
+      <div class="border border-[#526044]/50 bg-[#596747]/10 p-8 text-center sm:p-10">
+        <div class="mx-auto flex h-10 w-10 items-center justify-center border border-[#687550]/60 bg-[#687550]/15">
+          <span class="font-mono text-sm text-[#aab68a]" aria-hidden="true">
+            ✓
+          </span>
+        </div>
+
+        <p class="mt-4 font-display text-lg font-bold uppercase tracking-wide text-bone-100">
+          Todo al día
+        </p>
+
+        <p class="mt-2 font-mono text-[10px] uppercase tracking-wider text-[#aaa899]">
+          No existen informes pendientes de revisión.
+        </p>
+      </div>
+    ) : (
+      <div class="divide-y divide-[#393a31] border border-[#393a31] bg-[#171811]">
+        {pendingDeployments.map((deployment) => {
+          const creator = Array.isArray(deployment.members)
+            ? deployment.members[0]
+            : deployment.members;
+
+          return (
+            <a
+              href={`/despliegues/${deployment.id}`}
+              class={`group block border-l-2 bg-[#171811] p-4 transition-colors hover:bg-[#202119] sm:p-5 ${getRiskAccent(
+                deployment.risk_level
+              )}`}
+            >
+              <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <!-- INFORMACIÓN PRINCIPAL -->
+                <div class="min-w-0 flex-1">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-[#c9b47b]">
+                      {deployment.code}
+                    </span>
+
+                    <span class="text-[#555647]" aria-hidden="true">/</span>
+
+                    <span
+                      class={`border px-2 py-0.5 font-mono text-[8px] font-bold uppercase tracking-wider ${getRiskClass(
+                        deployment.risk_level
+                      )}`}
+                    >
+                      {deployment.risk_level ?? 'SIN RIESGO'}
+                    </span>
+
+                    <span class="border border-[#746344] bg-[#77704b]/15 px-2 py-0.5 font-mono text-[8px] font-bold uppercase tracking-wider text-[#d2bd86]">
+                      Pendiente
+                    </span>
+                  </div>
+
+                  <h3 class="mt-2 truncate font-display text-base font-bold uppercase tracking-wide text-bone-100 transition-colors group-hover:text-[#d2bd86] sm:text-lg">
+                    {deployment.title}
+                  </h3>
+
+                  <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[9px] uppercase tracking-wider text-[#aaa899]">
+                    {deployment.type && (
+                      <>
+                        <span>{deployment.type}</span>
+                        <span class="text-[#555647]" aria-hidden="true">/</span>
+                      </>
+                    )}
+
+                    <span>{deployment.location}</span>
+                  </div>
+
+                  <p class="mt-3 font-mono text-[9px] uppercase tracking-wider text-[#929080]">
+                    Alpha:
+                    <span class="ml-1 text-[#d3d0c4]">
+                      {creator?.full_name ?? 'Sin nombre'}
+                    </span>
+                    {creator?.callsign ? ` · ${creator.callsign}` : ''}
+                  </p>
+                </div>
+
+                <!-- FECHA Y ACCIÓN -->
+                <div class="flex shrink-0 flex-col gap-2 border-t border-[#393a31] pt-3 lg:min-w-44 lg:items-end lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+                  <time class="font-mono text-[9px] uppercase tracking-wider text-[#aaa899]">
+                    {formatDate(deployment.created_at)}
+                  </time>
+
+                  <span class="font-mono text-[9px] font-bold uppercase tracking-[0.15em] text-[#c9b47b] transition-transform group-hover:translate-x-1">
+                    Abrir informe →
+                  </span>
+                </div>
+              </div>
+            </a>
+          );
+        })}
+      </div>
+    )}
+  </section>
 </CommandLayout>

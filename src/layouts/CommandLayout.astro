@@ -33,31 +33,51 @@ const {
 
   <body class="min-h-screen bg-base-950 text-bone-100 antialiased">
 
-    <div class="min-h-screen bg-base-950">
+    <div class="relative min-h-screen overflow-hidden bg-base-950">
 
-      <!-- HEADER -->
-      <CommandHeader />
+      <!-- =====================================================
+           LOGO DE FONDO
+           ===================================================== -->
 
-      <!-- ESTRUCTURA -->
-      <div class="flex">
+      <img
+        src="/img/srt-patch.png"
+        alt=""
+        aria-hidden="true"
+        class="pointer-events-none fixed left-1/2 top-1/2 z-0 w-[650px] -translate-x-1/2 -translate-y-1/2 select-none opacity-[0.05]"
+      />
 
-        <!-- SIDEBAR -->
-        <CommandSidebar />
+      <!-- =====================================================
+           CONTENIDO DE LA APLICACIÓN
+           ===================================================== -->
 
-        <!-- CONTENIDO -->
-        <main class="min-w-0 flex-1 pt-20 lg:ml-64">
+      <div class="relative z-10">
 
-          <div class="min-h-[calc(100vh-5rem)] p-6 lg:p-8">
-            <slot />
-          </div>
+        <!-- HEADER -->
+        <CommandHeader />
 
-        </main>
+        <!-- ESTRUCTURA -->
+        <div class="flex">
+
+          <!-- SIDEBAR -->
+          <CommandSidebar />
+
+          <!-- CONTENIDO -->
+          <main class="min-w-0 flex-1 pt-20 lg:ml-64">
+
+            <div class="min-h-[calc(100vh-5rem)] p-6 lg:p-8">
+              <slot />
+            </div>
+
+          </main>
+
+        </div>
 
       </div>
 
     </div>
 
   </body>
+
 </html>
 
 <style>

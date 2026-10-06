@@ -25,7 +25,15 @@ const mobileNav = nav.filter((item) => item.href);
 ---
 
 <Layout title={`${title} | SRT`}>
-  <div class="tac-grid flex h-dvh flex-col overflow-hidden bg-base-950 text-bone-100">
+  <div class="tac-grid relative isolate flex h-dvh flex-col overflow-hidden bg-base-950 text-bone-100">
+    <img
+      src="/img/srt-patch.png"
+      alt=""
+      aria-hidden="true"
+      class="pointer-events-none absolute left-1/2 top-1/2 z-0 w-[84vw] max-w-[650px] -translate-x-1/2 -translate-y-1/2 select-none opacity-[0.05]"
+    />
+
+    <div class="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
     <!-- BANDA DE CLASIFICACIÓN -->
     <div class="hazard h-1.5 shrink-0"></div>
 
@@ -116,14 +124,12 @@ const mobileNav = nav.filter((item) => item.href);
 
         <div class="shrink-0 border-t border-base-600/40 p-4">
           <div class="barcode mb-3 h-4"></div>
-          <form method="POST" action="/api/auth/signout">
-            <button
-              type="submit"
-              class="w-full border border-base-600/60 px-4 py-2.5 font-display text-xs uppercase tracking-wider text-silver-300 hover:border-gold-500/50 hover:bg-base-800"
-            >
-              Cerrar sesión
-            </button>
-          </form>
+          <a
+            href="/api/auth/logout"
+            class="block w-full cursor-pointer border border-base-600/60 px-4 py-2.5 text-center font-display text-xs uppercase tracking-wider text-silver-300 hover:border-gold-500/50 hover:bg-base-800"
+          >
+            Cerrar sesión
+          </a>
         </div>
       </aside>
 
@@ -165,6 +171,8 @@ const mobileNav = nav.filter((item) => item.href);
       <img src="/img/fish-logo.png" alt="Department of Fish & Wildlife" class="h-5 w-auto opacity-70" />
     </footer>
   </div>
+</div>
+
 </Layout>
 
 <script>

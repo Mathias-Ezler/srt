@@ -1,0 +1,539 @@
+---
+import OperatorLayout from '../../layouts/OperatorLayout.astro';
+import { getCurrentMember } from '../../lib/auth';
+import { createApiClient } from '../../lib/supabase-api';
+
+const { member } = await getCurrentMember(Astro);
+
+if (!member) {
+  return Astro.redirect('/login');
+}
+
+const supabase = createApiClient(Astro.request, Astro.cookies);
+const DEFAULT_PHOTO = '/img/default-operator.jpg';
+
+const rankId = member.rank?.id ?? null;
+
+async function checkLeader(): Promise<boolean> {
+  if (!rankId) return false;
+
+  const { data: perm } = await supabase
+    .from('rank_permissions')
+    .select('permission_key')
+    .eq('rank_id', rankId)
+    .eq('permission_key', 'admin.access')
+    .maybeSingle();
+
+  return !!perm;
+}
+
+const [isLeader, { data: rows, error }] = await Promise.all([
+  checkLeader(),
+  supabase.from('members').select(`
+    id,
+    full_name,
+    callsign,
+    photo_url,
+    rank_id,
+    created_at,
+    ranks (
+      id,
+      name,
+      level,
+      insignia_url
+    )
+  `),
+]);
+
+if (error) {
+  console.error('Error cargando miembros:', error);
+}
+
+const list: any[] = rows ?? [];
+
+// =========================================================
+// FOTOS: una sola petición para firmar todas las rutas privadas
+// =========================================================
+
+const isUrl = (value: string) => /^https?:\/\//.test(value);
+
+const paths = list
+  .map((m) => m.photo_url as string | null)
+  .filter((p): p is string => !!p && !isUrl(p));
+
+const signed = new Map<string, string>();
+
+if (paths.length > 0) {
+  const { data } = await supabase.storage.from('avatars').createSignedUrls(paths, 3600);
+
+  data?.forEach((item) => {
+    if (item.path && item.signedUrl) signed.set(item.path, item.signedUrl);
+  });
+}
+
+const photoOf = (path: string | null) =>
+  !path ? DEFAULT_PHOTO : isUrl(path) ? path : (signed.get(path) ?? DEFAULT_PHOTO);
+
+// =========================================================
+// TARJETAS, ORDENADAS POR RANGO (mayor primero) Y NOMBRE
+// =========================================================
+
+type Rank = { id: number; name: string; level: number; insignia_url: string | null };
+
+const cards = list
+  .map((m) => {
+    // PostgREST devuelve un objeto en relaciones muchos-a-uno; contemplamos ambos casos
+    const rank: Rank | null = (Array.isArray(m.ranks) ? m.ranks[0] : m.ranks) ?? null;
+
+    return {
+      id: m.id as string,
+      name: (m.full_name as string | null) ?? 'Sin nombre',
+      callsign: m.callsign as string | null,
+      photoSrc: photoOf(m.photo_url),
+      createdAt: m.created_at as string | null,
+      rank,
+    };
+  })
+  .sort(
+    (a, b) =>
+      (b.rank?.level ?? -1) - (a.rank?.level ?? -1) || a.name.localeCompare(b.name, 'es')
+  );
+
+type Group = { key: string; name: string; sub: string; cards: typeof cards };
+
+const groups: Group[] = [];
+
+for (const card of cards) {
+  const key = String(card.rank?.id ?? 'none');
+  let group = groups.find((g) => g.key === key);
+
+  if (!group) {
+    group = {
+      key,
+      name: card.rank?.name ?? 'Sin rango',
+      sub: card.rank ? `Nivel ${card.rank.level}` : 'Pendiente de asignación',
+      cards: [],
+    };
+    groups.push(group);
+  }
+
+  group.cards.push(card);
+}
+
+const chips = [
+  { key: '', label: 'Todos', count: cards.length },
+  ...groups.map((g) => ({ key: g.key, label: g.name, count: g.cards.length })),
+];
+
+const formatDate = (value: string | null) =>
+  value
+    ? new Intl.DateTimeFormat('es-PY', { day: '2-digit', month: 'short', year: 'numeric' })
+        .format(new Date(value))
+        .replace(/\./g, '')
+        .toUpperCase()
+    : '—';
+---
+
+<OperatorLayout title="Miembros" active="miembros" isLeader={isLeader}>
+  <div class="mx-auto max-w-7xl space-y-5">
+    <!-- CABECERA -->
+    <section class="tac-grid brackets border border-base-600/60 bg-base-900 p-5 md:p-6">
+      <div class="flex flex-col justify-between gap-5 md:flex-row md:items-end">
+        <div>
+          <p class="flex items-center gap-3 font-mono text-[10px] uppercase tracking-[0.25em] text-gold-500">
+            <span class="h-px w-10 bg-gold-500"></span>
+            SRT // Personal
+          </p>
+
+          <h2 class="mt-3 font-display text-3xl font-bold uppercase leading-none tracking-wide md:text-4xl">
+            Miembros
+          </h2>
+
+          <p class="mt-3 max-w-2xl text-sm leading-6 text-silver-300">
+            Directorio operativo de los integrantes del equipo de respuesta táctica, ordenado por
+            jerarquía.
+          </p>
+        </div>
+
+        <div class="shrink-0 border-l-2 border-base-600 pl-4">
+          <p class="font-mono text-[10px] uppercase tracking-[0.2em] text-silver-300">Personal registrado</p>
+          <p class="mt-1 font-display text-3xl font-bold leading-none text-gold-500">
+            {cards.length.toString().padStart(2, '0')}
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- BÚSQUEDA + FILTROS (se quedan fijos al hacer scroll) -->
+    <section class="sticky top-0 z-10 border border-base-600/60 bg-base-900/95 p-3 backdrop-blur">
+      <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <div class="relative lg:w-72">
+          <svg
+            viewBox="0 0 24 24"
+            class="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-base-600"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            aria-hidden="true"
+          >
+            <circle cx="11" cy="11" r="7"></circle>
+            <path d="m20 20-3.5-3.5"></path>
+          </svg>
+
+          <input
+            id="member-search"
+            type="search"
+            placeholder="Nombre, callsign o rango"
+            aria-label="Buscar miembros"
+            class="fx-input pl-9 pr-9"
+          />
+
+          <kbd
+            class="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 border border-base-600 px-1.5 py-px font-mono text-[9px] text-base-600 sm:block"
+          >
+            /
+          </kbd>
+        </div>
+
+        <div class="flex flex-1 flex-wrap gap-2" role="group" aria-label="Filtrar por rango">
+          {chips.map((c, i) => (
+            <button
+              type="button"
+              data-filter={c.key}
+              aria-pressed={i === 0 ? 'true' : 'false'}
+              class="flex items-center gap-2 border border-base-600 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.15em] text-silver-300 hover:border-gold-500/50 hover:text-bone-100 aria-pressed:border-gold-500 aria-pressed:bg-gold-500/10 aria-pressed:text-gold-500"
+            >
+              {c.label}
+              <span class="tabular-nums opacity-70">{c.count}</span>
+            </button>
+          ))}
+        </div>
+
+        <div class="flex shrink-0" role="group" aria-label="Tipo de vista">
+          <button
+            type="button"
+            data-view="hierarchy"
+            aria-pressed="true"
+            class="border border-base-600 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.15em] text-silver-300 hover:text-bone-100 aria-pressed:border-gold-500 aria-pressed:bg-gold-500/10 aria-pressed:text-gold-500"
+          >
+            Jerarquía
+          </button>
+          <button
+            type="button"
+            data-view="grid"
+            aria-pressed="false"
+            class="-ml-px border border-base-600 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.15em] text-silver-300 hover:text-bone-100 aria-pressed:border-gold-500 aria-pressed:bg-gold-500/10 aria-pressed:text-gold-500"
+          >
+            Cuadrícula
+          </button>
+        </div>
+      </div>
+
+      <p id="visible-count" class="mt-3 font-mono text-[10px] uppercase tracking-[0.2em] tabular-nums text-silver-300" aria-live="polite">
+        {cards.length} {cards.length === 1 ? 'miembro' : 'miembros'}
+      </p>
+    </section>
+
+    {error && (
+      <div class="border border-danger-500/40 bg-danger-500/10 p-4">
+        <p class="font-mono text-[10px] uppercase tracking-wider text-danger-500">Error al cargar los miembros</p>
+        <p class="mt-1 font-mono text-xs text-silver-300">{error.message}</p>
+      </div>
+    )}
+
+    <!-- DIRECTORIO -->
+    <div id="members-grid" data-view="hierarchy">
+      {groups.map((group, index) => (
+        <section
+          class="rank-group"
+          data-sub={group.sub}
+          data-top={index === 0 && groups.length > 1 ? '' : undefined}
+        >
+          <header class="rank-header mb-3 flex items-center gap-4">
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center border border-gold-500/50 font-mono text-xs text-gold-500">
+              {group.cards[0].rank?.level ?? '—'}
+            </span>
+
+            <div>
+              <h3 class="font-display text-xl font-bold uppercase leading-none tracking-wide">{group.name}</h3>
+              <p data-group-count class="mt-1 font-mono text-[10px] uppercase tracking-wider text-silver-300">
+                {group.sub} · {group.cards.length} {group.cards.length === 1 ? 'miembro' : 'miembros'}
+              </p>
+            </div>
+
+            <div class="h-px flex-1 bg-base-600/50"></div>
+          </header>
+
+          <div class="rank-cards members-cols">
+            {group.cards.map((operator) => {
+              const isSelf = operator.id === member.id;
+              const fileNo = String(operator.id).replace(/-/g, '').slice(0, 6).toUpperCase();
+
+              return (
+                <article
+                  data-member-card
+                  data-self={isSelf ? '' : undefined}
+                  data-name={operator.name.toLowerCase()}
+                  data-callsign={(operator.callsign ?? '').toLowerCase()}
+                  data-rank-id={String(operator.rank?.id ?? 'none')}
+                  data-rank-name={(operator.rank?.name ?? '').toLowerCase()}
+                  class:list={[
+                    'member-card brackets group flex flex-col border bg-base-900',
+                    isSelf ? 'border-gold-500/50' : 'border-base-600/60',
+                  ]}
+                >
+                  <!-- Encabezado de expediente -->
+                  <div class="flex items-center justify-between border-b border-base-600/50 px-3 py-1.5">
+                    <span class="font-mono text-[10px] tracking-[0.2em] text-silver-300">EXP-{fileNo}</span>
+
+                    {isSelf && (
+                      <span class="border border-gold-500/50 px-1.5 py-px font-mono text-[9px] uppercase tracking-[0.15em] text-gold-500">
+                        Tú
+                      </span>
+                    )}
+                  </div>
+
+                  <!-- Foto -->
+                  <div class="relative aspect-[4/3] overflow-hidden bg-base-800">
+                    <img
+                      src={operator.photoSrc}
+                      alt={operator.name}
+                      loading="lazy"
+                      class="absolute inset-0 h-full w-full object-cover object-top grayscale-[.3] contrast-110 transition-[filter] duration-200 group-hover:grayscale-0"
+                      onerror="this.onerror=null;this.src='/img/default-operator.jpg'"
+                    />
+                    <div class="scan absolute inset-0"></div>
+                    <div class="absolute inset-0 bg-gradient-to-t from-base-950 via-transparent to-transparent opacity-80"></div>
+
+                    <div class="absolute bottom-3 left-3 border border-gold-500/50 bg-base-950/90 px-2 py-1">
+                      <span class="font-mono text-[10px] uppercase tracking-wider text-gold-500">
+                        [{operator.callsign ?? 'SIN PLACA'}]
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- Datos -->
+                  <div class="flex items-start justify-between gap-3 p-3.5">
+                    <div class="min-w-0">
+                      <h4 class="truncate font-display text-lg font-bold uppercase leading-tight tracking-wide text-bone-100">
+                        {operator.name}
+                      </h4>
+                      <p class="mt-1 truncate font-mono text-[10px] uppercase tracking-[0.16em] text-gold-500">
+                        {operator.rank?.name ?? 'Sin rango'}
+                      </p>
+                    </div>
+
+                    <span
+                      class="flex h-8 w-8 shrink-0 items-center justify-center border border-base-600 bg-base-800 font-mono text-[11px] text-silver-300"
+                      title="Nivel de rango"
+                    >
+                      {operator.rank?.insignia_url ? (
+                        <img src={operator.rank.insignia_url} alt={operator.rank.name} class="h-6 w-6 object-contain" />
+                      ) : (
+                        (operator.rank?.level ?? '—')
+                      )}
+                    </span>
+                  </div>
+
+                  <div class="mt-auto border-t border-base-600/50 px-3.5 py-2 font-mono text-[9px] uppercase tracking-[0.18em] text-silver-300">
+                    Alta {formatDate(operator.createdAt)}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+    </div>
+
+    <!-- SIN MIEMBROS EN LA BASE DE DATOS -->
+    {cards.length === 0 && !error && (
+      <div class="border border-dashed border-base-600 bg-base-900 px-5 py-12 text-center">
+        <p class="font-mono text-[10px] uppercase tracking-[0.25em] text-gold-500">Sin registros</p>
+        <p class="mt-2 font-display text-lg font-bold uppercase">Aún no hay miembros registrados</p>
+      </div>
+    )}
+
+    <!-- SIN RESULTADOS CON LOS FILTROS ACTUALES -->
+    <div id="empty-state" hidden class="border border-dashed border-base-600 bg-base-900 px-5 py-12 text-center">
+      <p class="font-mono text-[10px] uppercase tracking-[0.25em] text-gold-500">Sin coincidencias</p>
+      <p class="mt-2 font-display text-lg font-bold uppercase">No se encontraron miembros</p>
+      <p class="mt-1 text-sm text-silver-300">Probá con otro nombre, callsign o rango.</p>
+    </div>
+  </div>
+</OperatorLayout>
+
+<style is:global>
+  /* Campo de búsqueda (si ya lo tienes en global.css, puedes borrar este bloque) */
+  .fx-input {
+    display: block;
+    width: 100%;
+    padding: 0.65rem 0.8rem;
+    font-size: 0.875rem;
+    color: #ece8e1;
+    background: #0b0c0d;
+    border: 1px solid #3a3f44;
+    border-radius: 0;
+    outline: none;
+    color-scheme: dark;
+  }
+  .fx-input:focus {
+    border-color: #e3ba19;
+  }
+  .fx-input::placeholder {
+    color: rgb(184 188 192 / 0.45);
+  }
+
+  /* Columnas: iguales en la cuadrícula de cada rango y en la vista "Cuadrícula" */
+  .members-cols,
+  #members-grid[data-view='grid'] {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  @media (min-width: 640px) {
+    .members-cols,
+    #members-grid[data-view='grid'] {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (min-width: 1024px) {
+    .members-cols,
+    #members-grid[data-view='grid'] {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+  @media (min-width: 1280px) {
+    .members-cols,
+    #members-grid[data-view='grid'] {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+
+  /* Vista jerárquica: separación entre rangos y rango superior centrado (pirámide) */
+  #members-grid[data-view='hierarchy'] .rank-group + .rank-group {
+    margin-top: 2rem;
+  }
+  #members-grid[data-view='hierarchy'] .rank-group[data-top] .rank-cards {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  #members-grid[data-view='hierarchy'] .rank-group[data-top] .member-card {
+    width: min(100%, 18rem);
+  }
+
+  /* Vista cuadrícula: los rangos desaparecen y las tarjetas fluyen juntas */
+  #members-grid[data-view='grid'] .rank-group,
+  #members-grid[data-view='grid'] .rank-cards {
+    display: contents;
+  }
+  #members-grid[data-view='grid'] .rank-header {
+    display: none;
+  }
+
+  /* Filtrado */
+  .member-card[data-hidden='true'],
+  .rank-group[data-hidden='true'] {
+    display: none !important;
+  }
+
+  /* Las esquinas doradas solo aparecen al apuntar a la tarjeta (o si es la tuya) */
+  .member-card:not([data-self]):not(:hover)::before,
+  .member-card:not([data-self]):not(:hover)::after {
+    opacity: 0;
+  }
+</style>
+
+<script>
+  const $ = <T extends HTMLElement>(selector: string) => document.querySelector<T>(selector);
+
+  const search = $<HTMLInputElement>('#member-search');
+  const grid = $<HTMLElement>('#members-grid');
+  const countLabel = $<HTMLElement>('#visible-count');
+  const emptyState = $<HTMLElement>('#empty-state');
+
+  const cards = Array.from(document.querySelectorAll<HTMLElement>('[data-member-card]'));
+  const groups = Array.from(document.querySelectorAll<HTMLElement>('.rank-group'));
+  const chips = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-filter]'));
+  const viewButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-view]'));
+
+  let rank = '';
+
+  const plural = (n: number) => `${n} ${n === 1 ? 'miembro' : 'miembros'}`;
+
+  function applyFilters() {
+    const query = search?.value.trim().toLowerCase() ?? '';
+    let visible = 0;
+
+    cards.forEach((card) => {
+      const text = `${card.dataset.name} ${card.dataset.callsign} ${card.dataset.rankName}`;
+      const show = (!query || text.includes(query)) && (!rank || card.dataset.rankId === rank);
+
+      card.dataset.hidden = show ? 'false' : 'true';
+      if (show) visible++;
+    });
+
+    // Cada rango se oculta si se queda sin tarjetas visibles
+    groups.forEach((group) => {
+      const n = group.querySelectorAll('.member-card[data-hidden="false"], .member-card:not([data-hidden])').length;
+      group.dataset.hidden = n === 0 ? 'true' : 'false';
+
+      const label = group.querySelector<HTMLElement>('[data-group-count]');
+      if (label) label.textContent = `${group.dataset.sub} · ${plural(n)}`;
+    });
+
+    if (countLabel) countLabel.textContent = visible === cards.length ? plural(visible) : `${visible} de ${plural(cards.length)}`;
+    if (emptyState) emptyState.hidden = !(cards.length > 0 && visible === 0);
+  }
+
+  chips.forEach((chip) => {
+    chip.addEventListener('click', () => {
+      rank = chip.dataset.filter ?? '';
+      chips.forEach((c) => c.setAttribute('aria-pressed', String(c === chip)));
+      applyFilters();
+    });
+  });
+
+  search?.addEventListener('input', applyFilters);
+
+  // Vista: jerarquía o cuadrícula (se recuerda la última elegida)
+  function setView(view: string) {
+    if (grid) grid.dataset.view = view;
+    viewButtons.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
+
+    try {
+      localStorage.setItem('members-view', view);
+    } catch {
+      /* sin almacenamiento disponible */
+    }
+  }
+
+  viewButtons.forEach((button) => button.addEventListener('click', () => setView(button.dataset.view ?? 'hierarchy')));
+
+  let saved: string | null = null;
+  try {
+    saved = localStorage.getItem('members-view');
+  } catch {
+    /* sin almacenamiento disponible */
+  }
+  setView(saved === 'grid' ? 'grid' : 'hierarchy');
+
+  // Atajos: "/" enfoca la búsqueda, Esc la limpia
+  document.addEventListener('keydown', (event) => {
+    const target = event.target as HTMLElement | null;
+    const typing = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+
+    if (event.key === '/' && !typing) {
+      event.preventDefault();
+      search?.focus();
+    }
+
+    if (event.key === 'Escape' && target === search && search) {
+      search.value = '';
+      applyFilters();
+      search.blur();
+    }
+  });
+</script>

@@ -4,7 +4,8 @@ import { createSupabaseServerClient } from './supabase-server';
 export async function getCurrentMember(
   context: APIContext
 ) {
-  const supabase = createSupabaseServerClient(context);
+  const supabase =
+    createSupabaseServerClient(context);
 
   const {
     data: { user },
@@ -24,25 +25,28 @@ export async function getCurrentMember(
     };
   }
 
-  const { data: member, error: memberError } =
-    await supabase
-      .from('members')
-      .select(`
+  const {
+    data: member,
+    error: memberError,
+  } = await supabase
+    .from('members')
+    .select(`
+      id,
+      email,
+      full_name,
+      callsign,
+      photo_url,
+      rank_id,
+      created_at,
+      ranks (
         id,
-        email,
-        full_name,
-        callsign,
-        photo_url,
-        rank_id,
-        ranks (
-          id,
-          name,
-          level,
-          insignia_url
-        )
-      `)
-      .eq('id', user.id)
-      .single();
+        name,
+        level,
+        insignia_url
+      )
+    `)
+    .eq('id', user.id)
+    .single();
 
   if (memberError || !member) {
     console.error(
@@ -57,7 +61,13 @@ export async function getCurrentMember(
     };
   }
 
-  const rank = member.ranks?.[0] ?? null;
+  /*
+   * Supabase puede devolver la relación como
+   * objeto o como array dependiendo de la relación.
+   */
+  const rank = Array.isArray(member.ranks)
+    ? member.ranks[0] ?? null
+    : member.ranks ?? null;
 
   let permissions: string[] = [];
 
@@ -78,17 +88,27 @@ export async function getCurrentMember(
     } else {
       permissions =
         rankPermissions?.map(
-          (permission) => permission.permission_key
+          (permission) =>
+            permission.permission_key
         ) ?? [];
     }
   }
 
+  console.log('AUTH PERMISSIONS:', {
+    user: user.id,
+    rankId: rank?.id ?? null,
+    rankName: rank?.name ?? null,
+    permissions,
+  });
+
   return {
     user,
+
     member: {
       ...member,
       rank,
     },
+
     permissions,
   };
 }

@@ -5,7 +5,6 @@ interface Props {
 }
 
 const { pendingRequests = 0 } = Astro.props;
-
 const path = Astro.url.pathname.replace(/\/$/, '') || '/';
 
 const items = [
@@ -13,7 +12,7 @@ const items = [
     code: '01',
     label: 'Personal',
     href: '/panel',
-    tone: 'text-gold-500',
+    tone: 'text-[#b9a873]',
     active: path === '/panel' || path.startsWith('/panel/miembros'),
     count: 0,
   },
@@ -21,7 +20,7 @@ const items = [
     code: '02',
     label: 'Despliegues',
     href: '/panel/despliegues',
-    tone: 'text-silver-300',
+    tone: 'text-[#c7c1ad]',
     active: path.startsWith('/panel/despliegues'),
     count: 0,
   },
@@ -29,7 +28,7 @@ const items = [
     code: '03',
     label: 'Estadísticas',
     href: '/panel/estadisticas',
-    tone: 'text-silver-300',
+    tone: 'text-[#a5aa8c]',
     active: path.startsWith('/panel/estadisticas'),
     count: 0,
   },
@@ -37,7 +36,7 @@ const items = [
     code: '04',
     label: 'Sanciones',
     href: '/panel/sanciones',
-    tone: 'text-danger-500',
+    tone: 'text-[#bd796a]',
     active: path.startsWith('/panel/sanciones'),
     count: 0,
   },
@@ -45,7 +44,7 @@ const items = [
     code: '05',
     label: 'Solicitudes',
     href: '/panel/solicitudes',
-    tone: 'text-blue-600',
+    tone: 'text-[#c9ad73]',
     active: path.startsWith('/panel/solicitudes'),
     count: pendingRequests,
   },
@@ -54,81 +53,105 @@ const items = [
 
 <!-- ESCRITORIO -->
 <aside
-  class="tac-grid fixed bottom-0 left-0 top-20 z-40 hidden w-64 border-r border-base-600/50 bg-base-900 lg:block"
+  class="tac-grid fixed bottom-0 left-0 top-20 z-40 hidden w-64 border-r border-[#393a31] bg-[#13140f] shadow-[12px_0_32px_rgba(0,0,0,0.18)] lg:block"
 >
   <div class="flex h-full flex-col">
     <!-- IDENTIFICADOR -->
-    <div class="shrink-0 border-b border-base-600/40 px-5 py-5">
-      <p class="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.3em] text-gold-500">
-        <span class="h-1.5 w-1.5 bg-gold-500"></span>
-        SRT / Command
-      </p>
-      <h2 class="mt-2 font-display text-xl font-semibold uppercase tracking-wider text-bone-100">
-        Centro de Mando
-      </h2>
+    <div class="shrink-0 border-b border-[#393a31] px-5 py-5">
+      <div class="flex items-center gap-3">
+
+        <div class="min-w-0">
+          <p class="flex items-center gap-2 font-mono text-[9px] uppercase tracking-[0.24em] text-[#b9a873]">
+            <span class="h-1.5 w-1.5 bg-[#b9a873]"></span>
+            Command / Gestión
+          </p>
+          <h2 class="mt-1 font-display text-lg font-semibold uppercase leading-tight tracking-[0.12em] text-bone-100">
+            Centro de Mando
+          </h2>
+        </div>
+      </div>
     </div>
 
-    <!-- NAVEGACIÓN (scroll interno solo si la pantalla es baja) -->
-    <nav class="thin-scroll min-h-0 flex-1 overflow-y-auto p-3" aria-label="Gestión">
-      <p class="mb-3 px-3 font-mono text-[10px] uppercase tracking-[0.25em] text-silver-300">
+    <!-- NAVEGACIÓN -->
+    <nav
+      class="thin-scroll min-h-0 flex-1 overflow-y-auto px-3 py-5"
+      aria-label="Gestión"
+    >
+      <p class="mb-3 flex items-center gap-3 px-3 font-mono text-[9px] uppercase tracking-[0.25em] text-[#898879]">
         Gestión
+        <span class="h-px flex-1 bg-[#393a31]" aria-hidden="true"></span>
       </p>
 
-      {items.map((item) => (
-        <a
-          href={item.href}
-          aria-current={item.active ? 'page' : undefined}
-          class:list={[
-            'group mb-1 flex items-center gap-3 border-l-2 px-4 py-3',
-            item.active
-              ? 'border-gold-500 bg-gold-500/10'
-              : 'border-transparent hover:border-base-600 hover:bg-base-800',
-          ]}
-        >
-          <span class:list={['font-mono text-[11px]', item.tone]}>{item.code}</span>
-
-          <span
+      <div class="space-y-1">
+        {items.map((item) => (
+          <a
+            href={item.href}
+            aria-current={item.active ? 'page' : undefined}
             class:list={[
-              'font-display text-sm uppercase tracking-wider',
-              item.active ? 'text-bone-100' : 'text-silver-300 group-hover:text-bone-100',
+              'group relative flex min-h-11 items-center gap-3 border-l-2 px-3.5 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#c9b47b]',
+              item.active
+                ? 'border-[#b9a873] bg-[#77704b]/20'
+                : 'border-transparent hover:border-[#625d42] hover:bg-[#202119]',
             ]}
           >
-            {item.label}
-          </span>
-
-          {item.count > 0 && (
-            <span class="ml-auto flex h-5 min-w-5 items-center justify-center border border-blue-600/50 bg-blue-600/10 px-1 font-mono text-[10px] text-blue-600">
-              {item.count}
+            <span class:list={['font-mono text-[10px] tracking-wider', item.tone]}>
+              {item.code}
             </span>
-          )}
 
-          {item.active && item.count === 0 && (
-            <span class="ml-auto text-gold-500" aria-hidden="true">→</span>
-          )}
-        </a>
-      ))}
+            <span
+              class:list={[
+                'font-display text-[13px] uppercase tracking-[0.12em] transition-colors',
+                item.active
+                  ? 'font-semibold text-bone-100'
+                  : 'text-[#b2b0a3] group-hover:text-bone-100',
+              ]}
+            >
+              {item.label}
+            </span>
+
+            {item.count > 0 && (
+              <span class="ml-auto flex h-5 min-w-5 items-center justify-center border border-[#8c7b50] bg-[#51482e] px-1 font-mono text-[10px] text-[#f0d99e]">
+                {item.count}
+              </span>
+            )}
+
+            {item.active && item.count === 0 && (
+              <span
+                class="ml-auto font-mono text-sm text-[#c9b47b]"
+                aria-hidden="true"
+              >
+                →
+              </span>
+            )}
+          </a>
+        ))}
+      </div>
     </nav>
 
     <!-- ESTADO DEL SISTEMA -->
-    <div class="shrink-0 border-t border-base-600/40 p-4">
+    <div class="shrink-0 border-t border-[#393a31] p-4">
       <div class="mb-3 flex items-center justify-between px-1">
-        <span class="font-mono text-[10px] uppercase tracking-wider text-silver-300">Sistema</span>
-        <span class="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-silver-300">
-          <span class="h-1.5 w-1.5 bg-green-500"></span>
+        <span class="font-mono text-[9px] uppercase tracking-[0.2em] text-[#898879]">
+          Sistema
+        </span>
+        <span class="flex items-center gap-2 font-mono text-[9px] uppercase tracking-[0.15em] text-[#b2b0a3]">
+          <span class="h-1.5 w-1.5 bg-[#8f9a6e] shadow-[0_0_7px_rgba(143,154,110,0.55)]"></span>
           Online
         </span>
       </div>
 
-      <div class="barcode mb-3 h-4"></div>
+      <div class="barcode mb-3 h-4 opacity-70"></div>
 
       <a
         href="/"
-        class="flex items-center justify-between border border-base-600/60 px-4 py-3 hover:border-gold-500/50 hover:bg-base-800"
+        class="group flex min-h-11 items-center justify-between border border-[#45463a] px-3.5 transition-colors hover:border-[#8a7950] hover:bg-[#202119] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c9b47b]"
       >
-        <span class="font-display text-xs uppercase tracking-wider text-silver-300">
+        <span class="font-display text-[11px] uppercase tracking-[0.12em] text-[#b2b0a3] group-hover:text-bone-100">
           Volver al sistema
         </span>
-        <span class="font-mono text-xs text-gold-500" aria-hidden="true">←</span>
+        <span class="font-mono text-xs text-[#c9b47b]" aria-hidden="true">
+          ←
+        </span>
       </a>
     </div>
   </div>
@@ -136,7 +159,7 @@ const items = [
 
 <!-- MÓVIL: barra inferior -->
 <nav
-  class="fixed inset-x-0 bottom-0 z-40 grid h-14 grid-cols-5 border-t border-base-600/60 bg-base-900 lg:hidden"
+  class="fixed inset-x-0 bottom-0 z-40 grid h-16 grid-cols-5 border-t border-[#393a31] bg-[#13140f] shadow-[0_-8px_24px_rgba(0,0,0,0.25)] lg:hidden"
   aria-label="Navegación del panel"
 >
   {items.map((item) => (
@@ -144,19 +167,19 @@ const items = [
       href={item.href}
       aria-current={item.active ? 'page' : undefined}
       class:list={[
-        'relative flex flex-col items-center justify-center gap-0.5 border-t-2',
+        'relative flex min-w-0 flex-col items-center justify-center gap-1 border-t-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#c9b47b]',
         item.active
-          ? 'border-gold-500 bg-gold-500/10 text-gold-500'
-          : 'border-transparent text-silver-300',
+          ? 'border-[#b9a873] bg-[#77704b]/20 text-[#e1d1a5]'
+          : 'border-transparent text-[#aaa899] hover:bg-[#202119]',
       ]}
     >
-      <span class="font-mono text-[10px]">{item.code}</span>
-      <span class="max-w-full truncate px-1 font-display text-[11px] uppercase tracking-wide">
+      <span class="font-mono text-[9px] tracking-wider">{item.code}</span>
+      <span class="max-w-full truncate px-1 font-display text-[10px] uppercase tracking-wide">
         {item.label}
       </span>
 
       {item.count > 0 && (
-        <span class="absolute right-2 top-1.5 flex h-4 min-w-4 items-center justify-center bg-blue-600 px-1 font-mono text-[9px] text-bone-100">
+        <span class="absolute right-1.5 top-1 flex h-4 min-w-4 items-center justify-center border border-[#8c7b50] bg-[#51482e] px-1 font-mono text-[9px] text-[#f0d99e]">
           {item.count}
         </span>
       )}

@@ -432,7 +432,7 @@ const repeaters = [
                     src={photoSrc}
                     alt={member.full_name ?? 'Alpha'}
                     class="h-full w-full object-cover grayscale-[.3]"
-                    onerror="this.onerror=null;this.src='/images/default-operator.jpg'"
+                    onerror="this.onerror=null;this.src='/img/default-operator.jpg'"
                   />
 
                 </div>
@@ -843,7 +843,6 @@ const repeaters = [
 
 
 <script>
-
   type Member = {
     id: string;
     full_name: string | null;
@@ -861,15 +860,20 @@ const repeaters = [
     max?: number;
   };
 
-
   const $ = <T extends HTMLElement>(selector: string) =>
     document.querySelector<T>(selector);
 
+  const form =
+    $('#deployment-form') as HTMLFormElement | null;
 
-  const form = $('#deployment-form') as HTMLFormElement | null;
-  const submitButton = $('#submit-button') as HTMLButtonElement | null;
-  const errorBox = $('#form-error') as HTMLElement | null;
-  const summary = $('#form-summary') as HTMLElement | null;
+  const submitButton =
+    $('#submit-button') as HTMLButtonElement | null;
+
+  const errorBox =
+    $('#form-error') as HTMLElement | null;
+
+  const summary =
+    $('#form-summary') as HTMLElement | null;
 
   const operatorsList =
     $('#operators-list') as HTMLElement | null;
@@ -892,7 +896,6 @@ const repeaters = [
   const descriptionCount =
     $('#description-count') as HTMLElement | null;
 
-
   const escapeHtml = (value: string) =>
     value.replace(
       /[&<>"']/g,
@@ -906,11 +909,8 @@ const repeaters = [
         })[c]!
     );
 
-
   // Error asociado a un campo concreto
-
   class FieldError extends Error {
-
     target?: HTMLElement | null;
 
     constructor(
@@ -920,9 +920,7 @@ const repeaters = [
       super(message);
       this.target = target;
     }
-
   }
-
 
   // ---------------------------------------------------------
   // CAMBIOS SIN GUARDAR
@@ -930,40 +928,29 @@ const repeaters = [
 
   let dirty = false;
 
-
   form?.addEventListener('input', (event) => {
-
     dirty = true;
 
     (event.target as HTMLElement)
       .removeAttribute('aria-invalid');
-
   });
-
 
   window.addEventListener(
     'beforeunload',
     (event) => {
-
       if (dirty) {
-
         event.preventDefault();
         event.returnValue = '';
-
       }
-
     }
   );
-
 
   // ---------------------------------------------------------
   // LISTAS DINÁMICAS
   // ---------------------------------------------------------
 
   const repeaters: Record<string, { fields: Field[] }> = {
-
     suspects: {
-
       fields: [
         {
           key: 'identification',
@@ -976,11 +963,9 @@ const repeaters = [
             'Objetos incautados',
         },
       ],
-
     },
 
     vehicles: {
-
       fields: [
         {
           key: 'description',
@@ -988,11 +973,9 @@ const repeaters = [
             'Ej. Dodge Charger negro - B32',
         },
       ],
-
     },
 
     equipment: {
-
       fields: [
         {
           key: 'description',
@@ -1000,11 +983,9 @@ const repeaters = [
             'Ej. Escudo balístico, rifle, dron...',
         },
       ],
-
     },
 
     recordings: {
-
       fields: [
         {
           key: 'url',
@@ -1013,28 +994,22 @@ const repeaters = [
           placeholder: 'https://...',
         },
       ],
-
     },
-
   };
-
 
   const containerOf = (name: string) =>
     $<HTMLElement>(
       `[data-repeater="${name}"]`
     );
 
-
   const rowsOf = (name: string) =>
     Array.from(
       containerOf(name)
         ?.querySelectorAll<HTMLElement>('[data-row]')
-      ?? []
+        ?? []
     );
 
-
   function refreshRepeater(name: string) {
-
     const container = containerOf(name);
 
     if (!container) return;
@@ -1042,19 +1017,14 @@ const repeaters = [
     const rows = rowsOf(name);
 
     rows.forEach((row, i) => {
-
       const index =
         row.querySelector('[data-index]');
 
       if (index) {
-
         index.textContent =
           `#${String(i + 1).padStart(2, '0')}`;
-
       }
-
     });
-
 
     const empty =
       container.querySelector<HTMLElement>(
@@ -1062,11 +1032,8 @@ const repeaters = [
       );
 
     if (empty) {
-
       empty.hidden = rows.length > 0;
-
     }
-
 
     const badge =
       $<HTMLElement>(
@@ -1074,37 +1041,28 @@ const repeaters = [
       );
 
     if (badge) {
-
       badge.textContent =
         String(rows.length);
-
     }
 
-
     updateSummary();
-
   }
 
-
   function addRow(name: string) {
-
     const config = repeaters[name];
-
     const container = containerOf(name);
 
     if (!config || !container) return;
 
-
-    const row = document.createElement('div');
+    const row =
+      document.createElement('div');
 
     row.dataset.row = '';
 
     row.className =
       'flex flex-col gap-3 border border-base-600/70 bg-base-950 p-3 sm:flex-row sm:items-center';
 
-
     row.innerHTML = `
-
       <span
         data-index
         class="font-mono text-[10px] text-gold-500"
@@ -1117,7 +1075,6 @@ const repeaters = [
             : ''
         }"
       >
-
         ${config.fields
           .map(
             (f) => `
@@ -1132,9 +1089,7 @@ const repeaters = [
             `
           )
           .join('')}
-
       </div>
-
 
       <button
         type="button"
@@ -1144,9 +1099,7 @@ const repeaters = [
       >
         Quitar
       </button>
-
     `;
-
 
     container.appendChild(row);
 
@@ -1157,43 +1110,30 @@ const repeaters = [
       ?.focus();
 
     dirty = true;
-
   }
 
-
   function collect(name: string) {
-
     const config = repeaters[name];
 
     return rowsOf(name)
-
       .map((row) =>
         Object.fromEntries(
-
           config.fields.map((f) => [
-
             f.key,
-
             (
               row.querySelector<HTMLInputElement>(
                 `[data-key="${f.key}"]`
               )?.value ?? ''
             ).trim(),
-
           ])
-
         )
       )
-
       .filter((item) =>
         Object.values(item).some(Boolean)
       );
-
   }
 
-
   Object.keys(repeaters).forEach((name) => {
-
     $<HTMLButtonElement>(
       `[data-add="${name}"]`
     )?.addEventListener(
@@ -1201,11 +1141,9 @@ const repeaters = [
       () => addRow(name)
     );
 
-
     containerOf(name)?.addEventListener(
       'click',
       (event) => {
-
         const button =
           (event.target as HTMLElement)
             .closest('[data-remove]');
@@ -1217,12 +1155,9 @@ const repeaters = [
           ?.remove();
 
         refreshRepeater(name);
-
       }
     );
-
   });
-
 
   // ---------------------------------------------------------
   // OPERADORES
@@ -1234,67 +1169,55 @@ const repeaters = [
   const selected =
     new Set<string>();
 
-
   let members: Member[] = [];
 
-
   async function loadMembers() {
-
     if (!operatorsList) return;
 
-
     try {
-
       const response =
-        await fetch('/api/miembros');
-
+        await fetch('/api/miembros', {
+          method: 'GET',
+          credentials: 'same-origin',
+          cache: 'no-store',
+        });
 
       if (!response.ok) {
-
         throw new Error(
           'No se pudieron cargar los operadores.'
         );
-
       }
 
-
-      members = await response.json();
+      members =
+        await response.json();
 
       renderMembers();
-
     } catch (error) {
-
-      console.error(error);
+      console.error(
+        'LOAD MEMBERS ERROR:',
+        error
+      );
 
       operatorsList.innerHTML = `
-
         <p
           class="border border-danger-500/40 bg-danger-500/10 p-3 font-mono text-[11px] uppercase tracking-wider text-danger-500 sm:col-span-2"
         >
           No se pudieron cargar los operadores.
         </p>
-
       `;
-
     }
-
   }
 
-
   function renderMembers() {
-
     if (!operatorsList) return;
-
 
     const query =
       operatorSearch?.value
         .trim()
         .toLowerCase() ?? '';
 
-
     const filtered =
       members.filter((m) =>
-
         [
           m.full_name ?? '',
           m.callsign ?? '',
@@ -1303,32 +1226,23 @@ const repeaters = [
           .join(' ')
           .toLowerCase()
           .includes(query)
-
       );
 
-
     if (filtered.length === 0) {
-
       operatorsList.innerHTML = `
-
         <p
           class="p-3 font-mono text-[11px] uppercase tracking-wider text-silver-300 sm:col-span-2"
         >
           No se encontraron operadores.
         </p>
-
       `;
 
       return;
-
     }
-
 
     operatorsList.innerHTML =
       filtered
-
         .map((m) => {
-
           const isSelf =
             m.id === selfId;
 
@@ -1354,21 +1268,21 @@ const repeaters = [
                 .toUpperCase()
             );
 
-
-          // Las fotos privadas se muestran como iniciales
-
+          /*
+           * Las fotos privadas llegan como
+           * URLs firmadas desde /api/miembros.
+           */
           const avatar =
             m.photo_url &&
             /^https?:\/\//.test(m.photo_url)
-
               ? `
                 <img
                   src="${escapeHtml(m.photo_url)}"
                   alt=""
                   class="h-10 w-10 shrink-0 border border-base-600 object-cover"
+                  loading="lazy"
                 />
               `
-
               : `
                 <div
                   class="flex h-10 w-10 shrink-0 items-center justify-center border border-base-600 bg-base-800 font-display text-lg text-gold-500"
@@ -1377,21 +1291,27 @@ const repeaters = [
                 </div>
               `;
 
-
           return `
-
-            <label class="block cursor-pointer">
-
+            <label
+              class="relative block cursor-pointer"
+            >
               <input
                 type="checkbox"
                 value="${escapeHtml(m.id)}"
-                class="operator-checkbox op-input sr-only"
-                ${selected.has(m.id) ? 'checked' : ''}
-                ${isSelf ? 'disabled' : ''}
+                class="operator-checkbox op-input absolute opacity-0 pointer-events-none"
+                ${
+                  selected.has(m.id)
+                    ? 'checked'
+                    : ''
+                }
+                ${
+                  isSelf
+                    ? 'disabled'
+                    : ''
+                }
               />
 
               <div class="op-card">
-
                 <span
                   class="op-check"
                   aria-hidden="true"
@@ -1402,7 +1322,6 @@ const repeaters = [
                 ${avatar}
 
                 <div class="min-w-0">
-
                   <p
                     class="truncate font-display text-sm font-semibold uppercase tracking-wide text-bone-100"
                   >
@@ -1418,29 +1337,26 @@ const repeaters = [
                         : ''
                     }
                   </p>
-
                 </div>
-
               </div>
-
             </label>
-
           `;
-
         })
-
         .join('');
-
   }
 
-
+  /*
+   * Selección de operadores.
+   *
+   * Guardamos el scroll ANTES de que el navegador
+   * procese el cambio de foco y lo restauramos
+   * inmediatamente después.
+   */
   operatorsList?.addEventListener(
     'change',
     (event) => {
-
       const checkbox =
         event.target as HTMLInputElement;
-
 
       if (
         !checkbox.classList.contains(
@@ -1450,45 +1366,48 @@ const repeaters = [
         return;
       }
 
+      const main =
+        document.querySelector(
+          'main.scroll-area'
+        ) as HTMLElement | null;
+
+      const scrollTop =
+        main?.scrollTop ?? 0;
 
       if (checkbox.checked) {
-
         selected.add(
           checkbox.value
         );
-
       } else {
-
         selected.delete(
           checkbox.value
         );
-
       }
 
-
       if (operatorsCount) {
-
         operatorsCount.textContent =
           `${selected.size} ${
             selected.size === 1
               ? 'seleccionado'
               : 'seleccionados'
           }`;
-
       }
-
 
       updateSummary();
 
+      requestAnimationFrame(() => {
+        if (main) {
+          main.scrollTop =
+            scrollTop;
+        }
+      });
     }
   );
-
 
   operatorSearch?.addEventListener(
     'input',
     renderMembers
   );
-
 
   // ---------------------------------------------------------
   // RIESGO, CONTADOR Y RESUMEN
@@ -1496,17 +1415,14 @@ const repeaters = [
 
   let riskText = '';
 
-
   document
     .querySelectorAll<HTMLInputElement>(
       'input[name="riskLevel"]'
     )
     .forEach((input) => {
-
       input.addEventListener(
         'change',
         () => {
-
           riskText =
             input.value;
 
@@ -1514,9 +1430,7 @@ const repeaters = [
             'aria-invalid'
           );
 
-
           if (riskPreview) {
-
             riskPreview.textContent =
               input.value;
 
@@ -1524,68 +1438,47 @@ const repeaters = [
               `font-mono text-[10px] uppercase tracking-wider ${
                 input.dataset.tone ?? ''
               }`;
-
           }
 
-
           updateSummary();
-
         }
       );
-
     });
-
 
   description?.addEventListener(
     'input',
     () => {
-
       if (descriptionCount) {
-
         descriptionCount.textContent =
           `${description.value.length} / 5000`;
-
       }
-
     }
   );
 
-
   function updateSummary() {
-
     if (!summary) return;
-
 
     const count =
       (name: string) =>
         rowsOf(name).length;
 
-
     summary.textContent = [
-
       `Riesgo ${riskText || '—'}`,
-
       `${selected.size} ${
         selected.size === 1
           ? 'operador'
           : 'operadores'
       }`,
-
       `${count('suspects')} sospechosos`,
-
       `${count('vehicles')} vehículos`,
-
     ].join(' · ');
-
   }
-
 
   // ---------------------------------------------------------
   // ENVÍO
   // ---------------------------------------------------------
 
   function showError(message: string) {
-
     if (!errorBox) return;
 
     errorBox.textContent =
@@ -1593,27 +1486,19 @@ const repeaters = [
 
     errorBox.hidden =
       false;
-
   }
-
 
   form?.addEventListener(
     'submit',
     async (event) => {
-
       event.preventDefault();
-
 
       if (!submitButton) return;
 
-
       if (errorBox) {
-
         errorBox.hidden =
           true;
-
       }
-
 
       submitButton.disabled =
         true;
@@ -1621,9 +1506,7 @@ const repeaters = [
       submitButton.textContent =
         'Creando...';
 
-
       try {
-
         const titleInput =
           $<HTMLInputElement>(
             '#title'
@@ -1639,7 +1522,6 @@ const repeaters = [
             '#location'
           );
 
-
         const title =
           titleInput?.value.trim() ?? '';
 
@@ -1649,52 +1531,38 @@ const repeaters = [
         const location =
           locationInput?.value.trim() ?? '';
 
-
         const riskLevel =
           $<HTMLInputElement>(
             'input[name="riskLevel"]:checked'
           )?.value ?? '';
 
-
         if (!title) {
-
           throw new FieldError(
             'Ingresá un título.',
             titleInput
           );
-
         }
 
-
         if (!type) {
-
           throw new FieldError(
             'Seleccioná un tipo de despliegue.',
             typeSelect
           );
-
         }
 
-
         if (!location) {
-
           throw new FieldError(
             'Ingresá una ubicación.',
             locationInput
           );
-
         }
 
-
         if (!riskLevel) {
-
           throw new FieldError(
             'Seleccioná un nivel de riesgo.',
             riskGroup
           );
-
         }
-
 
         const response =
           await fetch(
@@ -1711,13 +1579,9 @@ const repeaters = [
                 'same-origin',
 
               body: JSON.stringify({
-
                 title,
-
                 type,
-
                 location,
-
                 riskLevel,
 
                 description:
@@ -1743,60 +1607,44 @@ const repeaters = [
 
                 recordings:
                   collect('recordings'),
-
               }),
-
             }
           );
-
 
         const text =
           await response.text();
 
-
         let result: any = null;
 
-
         try {
-
           result =
             JSON.parse(text);
-
         } catch {
-
           throw new Error(
             `El servidor devolvió una respuesta inválida (${response.status}).`
           );
-
         }
-
 
         if (
           !response.ok ||
           !result?.success
         ) {
-
           throw new Error(
             result?.error ??
               'No se pudo crear el despliegue.'
           );
-
         }
 
-
         dirty = false;
-
 
         window.location.href =
           `/despliegues/${result.id}`;
 
       } catch (error) {
-
         console.error(
           'CREATE DEPLOYMENT ERROR:',
           error
         );
-
 
         showError(
           error instanceof Error
@@ -1804,52 +1652,44 @@ const repeaters = [
             : 'Ocurrió un error al crear el despliegue.'
         );
 
-
         if (
           error instanceof FieldError &&
           error.target
         ) {
-
           error.target.setAttribute(
             'aria-invalid',
             'true'
           );
-
 
           error.target.scrollIntoView({
             block: 'center',
             behavior: 'smooth',
           });
 
-
           error.target.focus({
             preventScroll: true,
           });
-
         } else {
-
           errorBox?.scrollIntoView({
             block: 'center',
             behavior: 'smooth',
           });
-
         }
-
 
         submitButton.disabled =
           false;
 
         submitButton.textContent =
           'Crear despliegue';
-
       }
-
     }
   );
 
+  // ---------------------------------------------------------
+  // INICIALIZACIÓN
+  // ---------------------------------------------------------
 
   updateSummary();
 
   loadMembers();
-
 </script>
